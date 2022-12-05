@@ -6,10 +6,22 @@
 #include <util/strencodings.h>
 
 
-PartiallySignedTransaction::PartiallySignedTransaction(const CMutableTransaction& tx) : tx(tx)
+PartiallySignedTransaction::PartiallySignedTransaction(const CMutableTransaction& tx, uint32_t version) : m_version(version)
 {
-    inputs.resize(tx.vin.size());
-    outputs.resize(tx.vout.size());
+    if (version == 0) {
+        this->tx = tx;
+    }
+    inputs.resize(tx.vin.size(), PSBTInput(GetVersion()));
+    outputs.resize(tx.vout.size(), PSBTOutput(GetVersion()));
+    SetupFromTx(tx);
+}
+
+PartiallySignedTransaction::PartiallySignedTransaction(uint32_t version) :
+    m_version(version)
+{
+    if (GetVersion() >= 2) {
+        tx_version = CTransaction::CURRENT_VERSION;
+    }
 }
 
 bool PartiallySignedTransaction::IsNull() const
@@ -20,56 +32,236 @@ bool PartiallySignedTransaction::IsNull() const
 bool PartiallySignedTransaction::Merge(const PartiallySignedTransaction& psbt)
 {
     // Prohibited to merge two PSBTs over different transactions
-    if (tx->GetHash() != psbt.tx->GetHash()) {
+    if (GetUniqueID() != psbt.GetUniqueID()) {
         return false;
     }
 
+    assert(*tx_version == psbt.tx_version);
     for (unsigned int i = 0; i < inputs.size(); ++i) {
         inputs[i].Merge(psbt.inputs[i]);
     }
     for (unsigned int i = 0; i < outputs.size(); ++i) {
         outputs[i].Merge(psbt.outputs[i]);
     }
+    if (fallback_locktime == nullopt && psbt.fallback_locktime != nullopt) fallback_locktime = psbt.fallback_locktime;
+    if (m_tx_modifiable != nullopt && psbt.m_tx_modifiable != nullopt) *m_tx_modifiable |= *psbt.m_tx_modifiable;
+    if (m_tx_modifiable == nullopt && psbt.m_tx_modifiable != nullopt) m_tx_modifiable = psbt.m_tx_modifiable;
     unknown.insert(psbt.unknown.begin(), psbt.unknown.end());
 
     return true;
 }
 
-bool PartiallySignedTransaction::AddInput(const CTxIn& txin, PSBTInput& psbtin)
+bool PartiallySignedTransaction::ComputeTimeLock(uint32_t& locktime) const
 {
-    if (std::find(tx->vin.begin(), tx->vin.end(), txin) != tx->vin.end()) {
+    Optional<uint32_t> time_lock{0};
+    Optional<uint32_t> height_lock{0};
+    for (const PSBTInput& input : inputs) {
+        if (input.time_locktime != nullopt && input.height_locktime == nullopt) {
+            height_lock.reset(); // Transaction can no longer have a height locktime
+            if (time_lock == nullopt) {
+                return false;
+            }
+        } else if (input.time_locktime == nullopt && input.height_locktime != nullopt) {
+            time_lock.reset(); // Transaction can no longer have a time locktime
+            if (height_lock == nullopt) {
+                return false;
+            }
+        }
+        if (input.time_locktime && time_lock != nullopt) {
+            time_lock = std::max(time_lock, input.time_locktime);
+        }
+        if (input.height_locktime && height_lock != nullopt) {
+            height_lock = std::max(height_lock, input.height_locktime);
+        }
+    }
+    if (height_lock != nullopt && *height_lock > 0) {
+        locktime = *height_lock;
+        return true;
+    }
+    if (time_lock != nullopt && *time_lock > 0) {
+        locktime = *time_lock;
+        return true;
+    }
+    locktime = fallback_locktime.value_or(0);
+    return true;
+}
+
+CMutableTransaction PartiallySignedTransaction::GetUnsignedTx() const
+{
+    if (tx != nullopt) {
+        return *tx;
+    }
+
+    CMutableTransaction mtx;
+    mtx.nVersion = *tx_version;
+    bool locktime_success = ComputeTimeLock(mtx.nLockTime);
+    assert(locktime_success);
+    uint32_t max_sequence = CTxIn::SEQUENCE_FINAL;
+    for (const PSBTInput& input : inputs) {
+        CTxIn txin;
+        txin.prevout.hash = input.prev_txid;
+        txin.prevout.n = *input.prev_out;
+        txin.nSequence = input.sequence.value_or(max_sequence);
+        mtx.vin.push_back(txin);
+    }
+    for (const PSBTOutput& output : outputs) {
+        CTxOut txout;
+        txout.nValue = *output.amount;
+        txout.scriptPubKey = *output.script;
+        mtx.vout.push_back(txout);
+    }
+    return mtx;
+}
+
+uint256 PartiallySignedTransaction::GetUniqueID() const
+{
+    if (tx != nullopt) {
+        return tx->GetHash();
+    }
+
+    // Get the unsigned transaction
+    CMutableTransaction mtx = GetUnsignedTx();
+    // Compute the locktime
+    bool locktime_success = ComputeTimeLock(mtx.nLockTime);
+    assert(locktime_success);
+    // Set the sequence numbers to 0
+    for (CTxIn& txin : mtx.vin) {
+        txin.nSequence = 0;
+    }
+    return mtx.GetHash();
+}
+
+bool PartiallySignedTransaction::AddInput(PSBTInput& psbtin)
+{
+    // Check required fields are present and this input is not a duplicate
+    if (psbtin.prev_txid.IsNull() ||
+        psbtin.prev_out == nullopt ||
+        std::find_if(inputs.begin(), inputs.end(),
+        [psbtin](const PSBTInput& psbt) {
+            return psbt.prev_txid == psbtin.prev_txid && psbt.prev_out == psbtin.prev_out;
+        }
+    ) != inputs.end()) {
         return false;
     }
-    tx->vin.push_back(txin);
-    psbtin.partial_sigs.clear();
-    psbtin.final_script_sig.clear();
-    psbtin.final_script_witness.SetNull();
+
+    if (tx != nullopt) {
+        // This is a v0 psbt, so do the v0 AddInput
+        CTxIn txin(COutPoint(psbtin.prev_txid, *psbtin.prev_out));
+        if (std::find(tx->vin.begin(), tx->vin.end(), txin) != tx->vin.end()) {
+            return false;
+        }
+        tx->vin.push_back(txin);
+        psbtin.partial_sigs.clear();
+        psbtin.final_script_sig.clear();
+        psbtin.final_script_witness.SetNull();
+        inputs.push_back(psbtin);
+        return true;
+    }
+
+    // No global tx, must be PSBTv2.
+    // Check inputs modifiable flag
+    if (m_tx_modifiable == nullopt || !m_tx_modifiable->test(0)) {
+        return false;
+    }
+
+    // Determine if we need to iterate the inputs.
+    // For now, we only do this if the new input has a required time lock.
+    // The BIP states that we should also do this if m_tx_modifiable's bit 2 is set
+    // (Has SIGHASH_SINGLE flag) but since we are only adding inputs at the end of the vector,
+    // we don't care about that.
+    bool iterate_inputs = psbtin.time_locktime != nullopt || psbtin.height_locktime != nullopt;
+    if (iterate_inputs) {
+        uint32_t old_timelock;
+        if (!ComputeTimeLock(old_timelock)) {
+            return false;
+        }
+
+        Optional<uint32_t> time_lock = psbtin.time_locktime;
+        Optional<uint32_t> height_lock = psbtin.height_locktime;
+        bool has_sigs = false;
+        for (const PSBTInput& input : inputs) {
+            if (input.time_locktime != nullopt && input.height_locktime == nullopt) {
+                height_lock.reset(); // Transaction can no longer have a height locktime
+                if (time_lock == nullopt) {
+                    return false;
+                }
+            } else if (input.time_locktime == nullopt && input.height_locktime != nullopt) {
+                time_lock.reset(); // Transaction can no longer have a time locktime
+                if (height_lock == nullopt) {
+                    return false;
+                }
+            }
+            if (input.time_locktime && time_lock != nullopt) {
+                time_lock = std::max(time_lock, input.time_locktime);
+            }
+            if (input.height_locktime && height_lock != nullopt) {
+                height_lock = std::max(height_lock, input.height_locktime);
+            }
+            if (!input.partial_sigs.empty()) {
+                has_sigs = true;
+            }
+        }
+        uint32_t new_timelock = fallback_locktime.value_or(0);
+        if (height_lock != nullopt && *height_lock > 0) {
+            new_timelock = *height_lock;
+        } else if (time_lock != nullopt && *time_lock > 0) {
+            new_timelock = *time_lock;
+        }
+        if (has_sigs && old_timelock != new_timelock) {
+            return false;
+        }
+    }
+
+    // Add the input to the end
     inputs.push_back(psbtin);
     return true;
 }
 
-bool PartiallySignedTransaction::AddOutput(const CTxOut& txout, const PSBTOutput& psbtout)
+bool PartiallySignedTransaction::AddOutput(const PSBTOutput& psbtout)
 {
-    tx->vout.push_back(txout);
+    if (psbtout.amount == nullopt || !psbtout.script.has_value()) {
+        return false;
+    }
+
+    if (tx != nullopt) {
+        // This is a v0 psbt, do the v0 AddOutput
+        CTxOut txout(*psbtout.amount, *psbtout.script);
+        tx->vout.push_back(txout);
+        outputs.push_back(psbtout);
+        return true;
+    }
+
+    // No global tx, must be PSBTv2
+    // Check outputs are modifiable
+    if (m_tx_modifiable == nullopt || !m_tx_modifiable->test(1)) {
+        return false;
+    }
     outputs.push_back(psbtout);
+
     return true;
 }
 
-bool PartiallySignedTransaction::GetInputUTXO(CTxOut& utxo, int input_index) const
+bool PSBTInput::GetUTXO(CTxOut& utxo) const
 {
-    PSBTInput input = inputs[input_index];
-    uint32_t prevout_index = tx->vin[input_index].prevout.n;
-    if (input.non_witness_utxo) {
-        if (prevout_index >= input.non_witness_utxo->vout.size()) {
+    if (non_witness_utxo) {
+        if (*prev_out >= non_witness_utxo->vout.size()) {
             return false;
         }
-        utxo = input.non_witness_utxo->vout[prevout_index];
-    } else if (!input.witness_utxo.IsNull()) {
-        utxo = input.witness_utxo;
+        if (non_witness_utxo->GetHash() != prev_txid) {
+            return false;
+        }
+        utxo = non_witness_utxo->vout[*prev_out];
+    } else if (!witness_utxo.IsNull()) {
+        utxo = witness_utxo;
     } else {
         return false;
     }
     return true;
+}
+
+COutPoint PSBTInput::GetOutPoint() const
+{
+    return COutPoint(prev_txid, *prev_out);
 }
 
 bool PSBTInput::IsNull() const
@@ -134,6 +326,9 @@ void PSBTInput::FromSignatureData(const SignatureData& sigdata)
 
 void PSBTInput::Merge(const PSBTInput& input)
 {
+    assert(prev_txid == input.prev_txid);
+    assert(*prev_out == *input.prev_out);
+
     if (!non_witness_utxo && input.non_witness_utxo) non_witness_utxo = input.non_witness_utxo;
     if (witness_utxo.IsNull() && !input.witness_utxo.IsNull()) {
         // TODO: For segwit v1, we will want to clear out the non-witness utxo when setting a witness one. For v0 and non-segwit, this is not safe
@@ -148,6 +343,9 @@ void PSBTInput::Merge(const PSBTInput& input)
     if (witness_script.empty() && !input.witness_script.empty()) witness_script = input.witness_script;
     if (final_script_sig.empty() && !input.final_script_sig.empty()) final_script_sig = input.final_script_sig;
     if (final_script_witness.IsNull() && !input.final_script_witness.IsNull()) final_script_witness = input.final_script_witness;
+    if (sequence == nullopt && input.sequence != nullopt) sequence = input.sequence;
+    if (time_locktime == nullopt && input.time_locktime != nullopt) time_locktime = input.time_locktime;
+    if (height_locktime == nullopt && input.height_locktime != nullopt) height_locktime = input.height_locktime;
 }
 
 void PSBTOutput::FillSignatureData(SignatureData& sigdata) const
@@ -183,6 +381,9 @@ bool PSBTOutput::IsNull() const
 
 void PSBTOutput::Merge(const PSBTOutput& output)
 {
+    assert(*amount == *output.amount);
+    assert(*script == *output.script);
+
     hd_keypaths.insert(output.hd_keypaths.begin(), output.hd_keypaths.end());
     unknown.insert(output.unknown.begin(), output.unknown.end());
 
@@ -207,7 +408,8 @@ size_t CountPSBTUnsignedInputs(const PartiallySignedTransaction& psbt) {
 
 void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransaction& psbt, int index)
 {
-    const CTxOut& out = psbt.tx->vout.at(index);
+    CMutableTransaction tx = psbt.GetUnsignedTx();
+    const CTxOut& out = tx.vout.at(index);
     PSBTOutput& psbt_out = psbt.outputs.at(index);
 
     // Fill a SignatureData with output info
@@ -217,7 +419,7 @@ void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransactio
     // Construct a would-be spend of this output, to update sigdata with.
     // Note that ProduceSignature is used to fill in metadata (not actual signatures),
     // so provider does not need to provide any private keys (it can be a HidingSigningProvider).
-    MutableTransactionSignatureCreator creator(psbt.tx.get_ptr(), /* index */ 0, out.nValue, SIGHASH_ALL);
+    MutableTransactionSignatureCreator creator(&tx, /*input_idx=*/0, out.nValue, SIGHASH_ALL);
     ProduceSignature(provider, creator, out.scriptPubKey, sigdata);
 
     // Put redeem_script, witness_script, key paths, into PSBTOutput.
@@ -227,7 +429,7 @@ void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransactio
 bool SignPSBTInput(const SigningProvider& provider, PartiallySignedTransaction& psbt, int index, int sighash, SignatureData* out_sigdata, bool use_dummy)
 {
     PSBTInput& input = psbt.inputs.at(index);
-    const CMutableTransaction& tx = *psbt.tx;
+    const CMutableTransaction& tx = psbt.GetUnsignedTx();
 
     if (PSBTInputSigned(input)) {
         return true;
@@ -243,7 +445,7 @@ bool SignPSBTInput(const SigningProvider& provider, PartiallySignedTransaction& 
 
     if (input.non_witness_utxo) {
         // If we're taking our information from a non-witness UTXO, verify that it matches the prevout.
-        COutPoint prevout = tx.vin[index].prevout;
+        COutPoint prevout = input.GetOutPoint();
         if (prevout.n >= input.non_witness_utxo->vout.size()) {
             return false;
         }
@@ -299,7 +501,7 @@ bool FinalizePSBT(PartiallySignedTransaction& psbtx)
     //   PartiallySignedTransaction did not understand them), this will combine them into a final
     //   script.
     bool complete = true;
-    for (unsigned int i = 0; i < psbtx.tx->vin.size(); ++i) {
+    for (unsigned int i = 0; i < psbtx.inputs.size(); ++i) {
         complete &= SignPSBTInput(DUMMY_SIGNING_PROVIDER, psbtx, i, SIGHASH_ALL);
     }
 
@@ -314,7 +516,7 @@ bool FinalizeAndExtractPSBT(PartiallySignedTransaction& psbtx, CMutableTransacti
         return false;
     }
 
-    result = *psbtx.tx;
+    result = psbtx.GetUnsignedTx();
     for (unsigned int i = 0; i < result.vin.size(); ++i) {
         result.vin[i].scriptSig = psbtx.inputs[i].final_script_sig;
         result.vin[i].scriptWitness = psbtx.inputs[i].final_script_witness;
@@ -372,4 +574,45 @@ bool DecodeRawPSBT(PartiallySignedTransaction& psbt, const std::string& tx_data,
         return false;
     }
     return true;
+}
+
+uint32_t PartiallySignedTransaction::GetVersion() const
+{
+    if (m_version != nullopt) {
+        return *m_version;
+    }
+    return 0;
+}
+
+void PartiallySignedTransaction::SetupFromTx(const CMutableTransaction& tx)
+{
+    tx_version = tx.nVersion;
+    fallback_locktime = tx.nLockTime;
+
+    uint32_t i;
+    for (i = 0; i < tx.vin.size(); ++i) {
+        PSBTInput& input = inputs.at(i);
+        const CTxIn& txin = tx.vin.at(i);
+
+        input.prev_txid = txin.prevout.hash;
+        input.prev_out = txin.prevout.n;
+        input.sequence = txin.nSequence;
+    }
+
+    for (i = 0; i < tx.vout.size(); ++i) {
+        PSBTOutput& output = outputs.at(i);
+        const CTxOut& txout = tx.vout.at(i);
+
+        output.amount = txout.nValue;
+        output.script = txout.scriptPubKey;
+    }
+}
+
+void PartiallySignedTransaction::CacheUnsignedTxPieces()
+{
+    // To make things easier, we split up the global unsigned transaction
+    // and use the PSBTv2 fields for PSBTv0.
+    if (tx != nullopt) {
+        SetupFromTx(*tx);
+    }
 }

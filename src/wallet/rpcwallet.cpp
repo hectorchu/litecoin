@@ -3722,7 +3722,7 @@ static RPCHelpMan bumpfee_helper(std::string method_name)
 
         result.pushKV("txid", txid.GetHex());
     } else {
-        PartiallySignedTransaction psbtx(mtx);
+        PartiallySignedTransaction psbtx(mtx, /* version=*/ 2);
         bool complete = false;
         const TransactionError err = pwallet->FillPSBT(psbtx, complete, SIGHASH_ALL, false /* sign */, true /* bip32derivs */);
         CHECK_NONFATAL(err == TransactionError::OK);
@@ -4356,7 +4356,7 @@ static RPCHelpMan send()
             }
 
             // Make a blank psbt
-            PartiallySignedTransaction psbtx(rawTx);
+            PartiallySignedTransaction psbtx(rawTx, /*version=*/2);
 
             // Fill transaction with our data and sign
             bool complete = true;
@@ -4594,6 +4594,7 @@ static RPCHelpMan walletcreatefundedpsbt()
                         },
                         "options"},
                     {"bip32derivs", RPCArg::Type::BOOL, /* default */ "true", "Include BIP 32 derivation paths for public keys if we know them"},
+                    {"psbt_version", RPCArg::Type::NUM, /* default */ "2", "The PSBT version number to use."},
                 },
                 RPCResult{
                     RPCResult::Type::OBJ, "", "",
@@ -4618,7 +4619,8 @@ static RPCHelpMan walletcreatefundedpsbt()
         UniValueType(), // ARR or OBJ, checked later
         UniValue::VNUM,
         UniValue::VOBJ,
-        UniValue::VBOOL
+        UniValue::VBOOL,
+        UniValue::VNUM
         }, true
     );
 
@@ -4638,7 +4640,15 @@ static RPCHelpMan walletcreatefundedpsbt()
     FundTransaction(pwallet, rawTx, fee, change_position, request.params[3], coin_control, /* override_min_fee */ true);
 
     // Make a blank psbt
-    PartiallySignedTransaction psbtx(rawTx);
+    uint32_t psbt_version = 2;
+    if (!request.params[5].isNull()) {
+        psbt_version = request.params[5].get_int();
+    }
+    if (psbt_version != 2 && psbt_version != 0) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "The PSBT version can only be 2 or 0");
+    }
+
+    PartiallySignedTransaction psbtx(rawTx, psbt_version);
 
     // Fill transaction with out data but don't sign
     bool bip32derivs = request.params[4].isNull() ? true : request.params[4].get_bool();
@@ -4800,7 +4810,7 @@ static const CRPCCommand commands[] =
     { "wallet",             "signrawtransactionwithwallet",     &signrawtransactionwithwallet,  {"hexstring","prevtxs","sighashtype"} },
     { "wallet",             "unloadwallet",                     &unloadwallet,                  {"wallet_name", "load_on_startup"} },
     { "wallet",             "upgradewallet",                    &upgradewallet,                 {"version"} },
-    { "wallet",             "walletcreatefundedpsbt",           &walletcreatefundedpsbt,        {"inputs","outputs","locktime","options","bip32derivs"} },
+    { "wallet",             "walletcreatefundedpsbt",           &walletcreatefundedpsbt,        {"inputs","outputs","locktime","options","bip32derivs", "psbt_version"} },
     { "wallet",             "walletlock",                       &walletlock,                    {} },
     { "wallet",             "walletpassphrase",                 &walletpassphrase,              {"passphrase","timeout"} },
     { "wallet",             "walletpassphrasechange",           &walletpassphrasechange,        {"oldpassphrase","newpassphrase"} },
