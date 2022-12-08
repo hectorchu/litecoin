@@ -27,8 +27,21 @@ static constexpr uint8_t PSBT_GLOBAL_FALLBACK_LOCKTIME = 0x03;
 static constexpr uint8_t PSBT_GLOBAL_INPUT_COUNT = 0x04;
 static constexpr uint8_t PSBT_GLOBAL_OUTPUT_COUNT = 0x05;
 static constexpr uint8_t PSBT_GLOBAL_TX_MODIFIABLE = 0x06;
+static constexpr uint8_t PSBT_GLOBAL_MWEB_TX_OFFSET = 0x90;
+static constexpr uint8_t PSBT_GLOBAL_MWEB_TX_STEALTH_OFFSET = 0x91;
+static constexpr uint8_t PSBT_GLOBAL_MWEB_KERNEL_COUNT = 0x92;
 static constexpr uint8_t PSBT_GLOBAL_VERSION = 0xFB;
 static constexpr uint8_t PSBT_GLOBAL_PROPRIETARY = 0xFC;
+
+// Kernel types
+static constexpr uint8_t PSBT_KERN_COMMIT = 0x00;
+static constexpr uint8_t PSBT_KERN_STEALTH_COMMIT = 0x01;
+static constexpr uint8_t PSBT_KERN_FEE = 0x02;
+static constexpr uint8_t PSBT_KERN_PEGIN_AMOUNT = 0x03;
+static constexpr uint8_t PSBT_KERN_PEGOUT = 0x04;
+static constexpr uint8_t PSBT_KERN_LOCK_HEIGHT = 0x05;
+static constexpr uint8_t PSBT_KERN_EXTRA_DATA = 0x06;
+static constexpr uint8_t PSBT_KERN_SIG = 0x07;
 
 // Input types
 static constexpr uint8_t PSBT_IN_NON_WITNESS_UTXO = 0x00;
@@ -55,6 +68,17 @@ static constexpr uint8_t PSBT_IN_TAP_LEAF_SCRIPT = 0x15;
 static constexpr uint8_t PSBT_IN_TAP_BIP32_DERIVATION = 0x16;
 static constexpr uint8_t PSBT_IN_TAP_INTERNAL_KEY = 0x17;
 static constexpr uint8_t PSBT_IN_TAP_MERKLE_ROOT = 0x18;
+static constexpr uint8_t PSBT_IN_MWEB_OUTPUT_ID = 0x90;
+static constexpr uint8_t PSBT_IN_MWEB_COMMIT = 0x91;
+static constexpr uint8_t PSBT_IN_MWEB_OUTPUT_PUBKEY = 0x92;
+static constexpr uint8_t PSBT_IN_MWEB_INPUT_PUBKEY = 0x93;
+static constexpr uint8_t PSBT_IN_MWEB_FEATURES = 0x94;
+static constexpr uint8_t PSBT_IN_MWEB_INPUT_SIG = 0x95;
+static constexpr uint8_t PSBT_IN_MWEB_ADDRESS_INDEX = 0x96;
+static constexpr uint8_t PSBT_IN_MWEB_AMOUNT = 0x97;
+static constexpr uint8_t PSBT_IN_MWEB_SHARED_SECRET = 0x98;
+static constexpr uint8_t PSBT_IN_MWEB_BLIND = 0x99;
+static constexpr uint8_t PSBT_IN_MWEB_UTXO = 0x9a;
 static constexpr uint8_t PSBT_IN_PROPRIETARY = 0xFC;
 
 // Output types
@@ -66,6 +90,17 @@ static constexpr uint8_t PSBT_OUT_SCRIPT = 0x04;
 static constexpr uint8_t PSBT_OUT_TAP_INTERNAL_KEY = 0x05;
 static constexpr uint8_t PSBT_OUT_TAP_TREE = 0x06;
 static constexpr uint8_t PSBT_OUT_TAP_BIP32_DERIVATION = 0x07;
+static constexpr uint8_t PSBT_OUT_MWEB_STEALTH_ADDRESS = 0x90;
+static constexpr uint8_t PSBT_OUT_MWEB_COMMIT = 0x91;
+static constexpr uint8_t PSBT_OUT_MWEB_FEATURES = 0x92;
+static constexpr uint8_t PSBT_OUT_MWEB_SENDER_PUBKEY = 0x93;
+static constexpr uint8_t PSBT_OUT_MWEB_OUTPUT_PUBKEY = 0x94;
+static constexpr uint8_t PSBT_OUT_MWEB_KEY_EXCHANGE_PUBKEY = 0x95;
+static constexpr uint8_t PSBT_OUT_MWEB_VIEW_TAG = 0x96;
+static constexpr uint8_t PSBT_OUT_MWEB_ENC_VALUE = 0x97;
+static constexpr uint8_t PSBT_OUT_MWEB_ENC_NONCE = 0x98;
+static constexpr uint8_t PSBT_OUT_MWEB_RANGEPROOF = 0x99;
+static constexpr uint8_t PSBT_OUT_MWEB_SIG = 0x9a;
 static constexpr uint8_t PSBT_OUT_PROPRIETARY = 0xFC;
 
 // The separator is 0x00. Reading this in means that the unserializer can interpret it
@@ -96,6 +131,19 @@ struct PSBTInput
     Optional<uint32_t> sequence;
     Optional<uint32_t> time_locktime;
     Optional<uint32_t> height_locktime;
+
+    // MWEB
+    Optional<mw::Hash> mweb_output_id;
+    Optional<Commitment> mweb_output_commit;
+    Optional<PublicKey> mweb_output_pubkey;
+    Optional<PublicKey> mweb_input_pubkey;
+    Optional<std::pair<uint8_t, std::vector<uint8_t>>> mweb_features;
+    Optional<Signature> mweb_sig;
+    Optional<uint32_t> mweb_address_index;
+    Optional<CAmount> mweb_amount;
+    Optional<SecretKey> mweb_shared_secret;
+    Optional<BlindingFactor> mweb_blind;
+    Optional<Output> mweb_utxo;
 
     std::map<std::vector<unsigned char>, std::vector<unsigned char>> unknown;
     int sighash_type = 0;
@@ -191,6 +239,52 @@ struct PSBTInput
             if (height_locktime != nullopt) {
                 SerializeToVector(s, CompactSizeWriter(PSBT_IN_REQUIRED_HEIGHT_LOCKTIME));
                 SerializeToVector(s, *height_locktime);
+            }
+
+            // MWEB
+            if (mweb_output_id != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_OUTPUT_ID));
+                SerializeToVector(s, *mweb_output_id);
+            }
+            if (mweb_output_commit != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_COMMIT));
+                SerializeToVector(s, *mweb_output_commit);
+            }
+            if (mweb_output_pubkey != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_OUTPUT_PUBKEY));
+                SerializeToVector(s, *mweb_output_pubkey);
+            }
+            if (mweb_input_pubkey != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_INPUT_PUBKEY));
+                SerializeToVector(s, *mweb_input_pubkey);
+            }
+            if (mweb_features != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_FEATURES));
+                SerializeToVector(s, *mweb_features);
+            }
+            if (mweb_sig != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_INPUT_SIG));
+                SerializeToVector(s, *mweb_sig);
+            }
+            if (mweb_address_index != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_ADDRESS_INDEX));
+                SerializeToVector(s, *mweb_address_index);
+            }
+            if (mweb_amount != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_AMOUNT));
+                SerializeToVector(s, *mweb_amount);
+            }
+            if (mweb_shared_secret != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_SHARED_SECRET));
+                SerializeToVector(s, *mweb_shared_secret);
+            }
+            if (mweb_blind != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_BLIND));
+                SerializeToVector(s, *mweb_blind);
+            }
+            if (mweb_utxo != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_UTXO));
+                SerializeToVector(s, *mweb_utxo);
             }
         }
 
@@ -398,6 +492,171 @@ struct PSBTInput
                     height_locktime = v;
                     break;
                 }
+                case PSBT_IN_MWEB_OUTPUT_ID:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB output ID is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB output ID is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB output ID is not allowed in PSBTv0");
+                    }
+
+                    mw::Hash v;
+                    UnserializeFromVector(s, v);
+                    mweb_output_id = v;
+                    break;
+                }
+                case PSBT_IN_MWEB_COMMIT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB commitment is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB commitment is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB commitment is not allowed in PSBTv0");
+                    }
+
+                    Commitment v;
+                    UnserializeFromVector(s, v);
+                    mweb_output_commit = v;
+                    break;
+                }
+                case PSBT_IN_MWEB_OUTPUT_PUBKEY:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB output public key is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB output public key is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB output public key is not allowed in PSBTv0");
+                    }
+
+                    PublicKey v;
+                    UnserializeFromVector(s, v);
+                    mweb_output_pubkey = v;
+                    break;
+                }
+                case PSBT_IN_MWEB_INPUT_PUBKEY:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB input public key is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB input public key is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB input public key is not allowed in PSBTv0");
+                    }
+
+                    PublicKey v;
+                    UnserializeFromVector(s, v);
+                    mweb_input_pubkey = v;
+                    break;
+                }
+                case PSBT_IN_MWEB_FEATURES:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB features is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB features is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB features is not allowed in PSBTv0");
+                    }
+
+                    std::pair<uint8_t, std::vector<uint8_t>> v;
+                    UnserializeFromVector(s, v);
+                    mweb_features = v;
+                    break;
+                }
+                case PSBT_IN_MWEB_INPUT_SIG:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB signature is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB signature is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB signature is not allowed in PSBTv0");
+                    }
+
+                    Signature v;
+                    UnserializeFromVector(s, v);
+                    mweb_sig = v;
+                    break;
+                }
+                case PSBT_IN_MWEB_ADDRESS_INDEX:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB address index is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB address index is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB address index is not allowed in PSBTv0");
+                    }
+
+                    uint32_t v;
+                    UnserializeFromVector(s, v);
+                    mweb_address_index = v;
+                    break;
+                }
+                case PSBT_IN_MWEB_AMOUNT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB amount is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB amount is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB amount is not allowed in PSBTv0");
+                    }
+
+                    CAmount v;
+                    UnserializeFromVector(s, v);
+                    mweb_amount = v;
+                    break;
+                }
+                case PSBT_IN_MWEB_SHARED_SECRET:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB shared secret is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB shared secret is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB shared secret is not allowed in PSBTv0");
+                    }
+
+                    SecretKey v;
+                    UnserializeFromVector(s, v);
+                    mweb_shared_secret = v;
+                    break;
+                }
+                case PSBT_IN_MWEB_BLIND:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB blinding factor is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB blinding factor is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB blinding factor is not allowed in PSBTv0");
+                    }
+
+                    BlindingFactor v;
+                    UnserializeFromVector(s, v);
+                    mweb_blind = v;
+                    break;
+                }
+                case PSBT_IN_MWEB_UTXO:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB UTXO is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB UTXO is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB UTXO is not allowed in PSBTv0");
+                    }
+
+                    Output v;
+                    UnserializeFromVector(s, v);
+                    mweb_utxo = v;
+                    break;
+                }
                 // Unknown stuff
                 default:
                     if (unknown.count(key) > 0) {
@@ -442,6 +701,18 @@ struct PSBTOutput
     Optional<CAmount> amount;
     Optional<CScript> script;
 
+    Optional<StealthAddress> mweb_stealth_address;
+    Optional<Commitment> mweb_commit;
+    Optional<std::pair<uint8_t, std::vector<uint8_t>>> mweb_features;
+    Optional<PublicKey> mweb_sender_pubkey;
+    Optional<PublicKey> mweb_output_pubkey;
+    Optional<PublicKey> mweb_key_exchange_pubkey;
+    Optional<uint8_t> mweb_view_tag;
+    Optional<uint64_t> mweb_enc_value;
+    Optional<BigInt<16>> mweb_enc_nonce;
+    Optional<RangeProof> mweb_rangeproof;
+    Optional<Signature> mweb_sig;
+
     std::map<std::vector<unsigned char>, std::vector<unsigned char>> unknown;
 
     uint32_t m_psbt_version;
@@ -478,6 +749,52 @@ struct PSBTOutput
             if (script.has_value()) {
                 SerializeToVector(s, CompactSizeWriter(PSBT_OUT_SCRIPT));
                 s << *script;
+            }
+
+            // MWEB
+            if (mweb_stealth_address != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_STEALTH_ADDRESS));
+                SerializeToVector(s, *mweb_stealth_address);
+            }
+            if (mweb_commit != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_COMMIT));
+                SerializeToVector(s, *mweb_commit);
+            }
+            if (mweb_features != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_FEATURES));
+                SerializeToVector(s, *mweb_features);
+            }
+            if (mweb_sender_pubkey != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_SENDER_PUBKEY));
+                SerializeToVector(s, *mweb_sender_pubkey);
+            }
+            if (mweb_output_pubkey != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_OUTPUT_PUBKEY));
+                SerializeToVector(s, *mweb_output_pubkey);
+            }
+            if (mweb_key_exchange_pubkey != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_KEY_EXCHANGE_PUBKEY));
+                SerializeToVector(s, *mweb_key_exchange_pubkey);
+            }
+            if (mweb_view_tag != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_VIEW_TAG));
+                SerializeToVector(s, *mweb_view_tag);
+            }
+            if (mweb_enc_value != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_ENC_VALUE));
+                SerializeToVector(s, *mweb_enc_value);
+            }
+            if (mweb_enc_nonce != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_ENC_NONCE));
+                SerializeToVector(s, *mweb_enc_nonce);
+            }
+            if (mweb_rangeproof != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_RANGEPROOF));
+                SerializeToVector(s, *mweb_rangeproof);
+            }
+            if (mweb_sig != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_SIG));
+                SerializeToVector(s, *mweb_sig);
             }
         }
 
@@ -568,6 +885,161 @@ struct PSBTOutput
                     script = v;
                     break;
                 }
+                // MWEB
+                case PSBT_OUT_MWEB_STEALTH_ADDRESS:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB stealth address is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB stealth address is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB stealth address is not allowed in PSBTv0");
+                    }
+                    StealthAddress v;
+                    UnserializeFromVector(s, v);
+                    mweb_stealth_address = v;
+                    break;
+                }
+                case PSBT_OUT_MWEB_COMMIT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB commitment is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB commitment is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB commitment is not allowed in PSBTv0");
+                    }
+                    Commitment v;
+                    UnserializeFromVector(s, v);
+                    mweb_commit = v;
+                    break;
+                }
+                case PSBT_OUT_MWEB_FEATURES:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB features is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB features is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB features is not allowed in PSBTv0");
+                    }
+                    std::pair<uint8_t, std::vector<uint8_t>> v;
+                    UnserializeFromVector(s, v);
+                    mweb_features = v;
+                    break;
+                }
+                case PSBT_OUT_MWEB_SENDER_PUBKEY:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB sender pubkey is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB sender pubkey is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB sender pubkey is not allowed in PSBTv0");
+                    }
+                    PublicKey v;
+                    UnserializeFromVector(s, v);
+                    mweb_sender_pubkey = v;
+                    break;
+                }
+                case PSBT_OUT_MWEB_OUTPUT_PUBKEY:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB output pubkey is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB output pubkey is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB output pubkey is not allowed in PSBTv0");
+                    }
+                    PublicKey v;
+                    UnserializeFromVector(s, v);
+                    mweb_output_pubkey = v;
+                    break;
+                }
+                case PSBT_OUT_MWEB_KEY_EXCHANGE_PUBKEY:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB key exchange pubkey is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB key exchange pubkey is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB key exchange pubkey is not allowed in PSBTv0");
+                    }
+                    PublicKey v;
+                    UnserializeFromVector(s, v);
+                    mweb_key_exchange_pubkey = v;
+                    break;
+                }
+                case PSBT_OUT_MWEB_VIEW_TAG:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB view tag is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB view tag is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB view tag is not allowed in PSBTv0");
+                    }
+                    uint8_t v;
+                    UnserializeFromVector(s, v);
+                    mweb_view_tag = v;
+                    break;
+                }
+                case PSBT_OUT_MWEB_ENC_VALUE:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB encrypted value is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB encrypted value is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB encrypted value is not allowed in PSBTv0");
+                    }
+                    uint64_t v;
+                    UnserializeFromVector(s, v);
+                    mweb_enc_value = v;
+                    break;
+                }
+                case PSBT_OUT_MWEB_ENC_NONCE:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB encrypted nonce is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB encrypted nonce is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB encrypted nonce is not allowed in PSBTv0");
+                    }
+                    BigInt<16> v;
+                    UnserializeFromVector(s, v);
+                    mweb_enc_nonce = v;
+                    break;
+                }
+                case PSBT_OUT_MWEB_RANGEPROOF:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB rangeproof is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB rangeproof is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB rangeproof is not allowed in PSBTv0");
+                    }
+                    RangeProof v;
+                    UnserializeFromVector(s, v);
+                    mweb_rangeproof = v;
+                    break;
+                }
+                case PSBT_OUT_MWEB_SIG:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, MWEB signature is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("MWEB signature is more than one byte type");
+                    } else if (m_psbt_version == 0) {
+                        throw std::ios_base::failure("MWEB signature is not allowed in PSBTv0");
+                    }
+                    Signature v;
+                    UnserializeFromVector(s, v);
+                    mweb_sig = v;
+                    break;
+                }
                 // Unknown stuff
                 default: {
                     if (unknown.count(key) > 0) {
@@ -603,6 +1075,194 @@ struct PSBTOutput
     }
 };
 
+/** A structure for PSBTs which contains per MWEB kernel information */
+struct PSBTKernel
+{
+    Optional<Commitment> commit;
+    Optional<Commitment> stealth_commit;
+    Optional<CAmount> fee;
+    Optional<CAmount> pegin_amount;
+    std::vector<PegOutCoin> pegouts;
+    Optional<uint64_t> lock_height;
+    std::vector<uint8_t> extra_data;
+    Optional<Signature> sig;
+
+    std::map<std::vector<unsigned char>, std::vector<unsigned char>> unknown;
+
+    template <typename Stream>
+    inline void Serialize(Stream& s) const {
+        if (commit != nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_COMMIT));
+            SerializeToVector(s, *commit);
+        }
+        if (stealth_commit != nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_STEALTH_COMMIT));
+            SerializeToVector(s, *stealth_commit);
+        }
+        if (fee != nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_FEE));
+            SerializeToVector(s, *fee);
+        }
+        if (pegin_amount != nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_PEGIN_AMOUNT));
+            SerializeToVector(s, *pegin_amount);
+        }
+        for (const PegOutCoin& pegout : pegouts) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_PEGOUT), Hashed(pegout));
+            SerializeToVector(s, pegout);
+        }
+        if (lock_height != nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_LOCK_HEIGHT));
+            SerializeToVector(s, *lock_height);
+        }
+        if (!extra_data.empty()) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_EXTRA_DATA));
+            s << extra_data;
+        }
+        if (sig != nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_SIG));
+            SerializeToVector(s, *sig);
+        }
+
+        // Write unknown things
+        for (auto& entry : unknown) {
+            s << entry.first;
+            s << entry.second;
+        }
+        
+        s << PSBT_SEPARATOR;
+    }
+
+    template <typename Stream>
+    inline void Unserialize(Stream& s) {
+        // Used for duplicate key detection
+        std::set<std::vector<unsigned char>> key_lookup;
+
+        // Read loop
+        bool found_sep = false;
+        while (!s.empty()) {
+            // Read
+            std::vector<unsigned char> key;
+            s >> key;
+
+            // the key is empty if that was actually a separator byte
+            // This is a special case for key lengths 0 as those are not allowed (except for separator)
+            if (key.empty()) {
+                found_sep = true;
+                break;
+            }
+
+            // First byte of key is the type
+            unsigned char type = key[0];
+
+            // Do stuff based on type
+            switch(type) {
+                case PSBT_KERN_COMMIT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, kernel commitment is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Kernel commitment is more than one byte type");
+                    }
+                    Commitment v;
+                    UnserializeFromVector(s, v);
+                    commit = v;
+                    break;
+                }
+                case PSBT_KERN_STEALTH_COMMIT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, kernel stealth commitment is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Kernel stealth commitment is more than one byte type");
+                    }
+                    Commitment v;
+                    UnserializeFromVector(s, v);
+                    stealth_commit = v;
+                    break;
+                }
+                case PSBT_KERN_FEE:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, kernel fee is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Kernel fee is more than one byte type");
+                    }
+                    CAmount v;
+                    UnserializeFromVector(s, v);
+                    fee = v;
+                    break;
+                }
+                case PSBT_KERN_PEGOUT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, pegout is already provided");
+                    }
+                    PegOutCoin v;
+                    UnserializeFromVector(s, v);
+                    pegouts.push_back(std::move(v));
+                    break;
+                }
+                case PSBT_KERN_LOCK_HEIGHT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, kernel lock height is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Kernel lock height is more than one byte type");
+                    }
+                    uint64_t v;
+                    UnserializeFromVector(s, v);
+                    lock_height = v;
+                    break;
+                }
+                case PSBT_KERN_EXTRA_DATA:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, kernel extra data is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Kernel extra data is more than one byte type");
+                    }
+                    s >> extra_data;
+                    break;
+                }
+                case PSBT_KERN_SIG:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, kernel signature is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Kernel signature is more than one byte type");
+                    }
+                    Signature v;
+                    UnserializeFromVector(s, v);
+                    sig = v;
+                    break;
+                }
+                // Unknown stuff
+                default: {
+                    if (unknown.count(key) > 0) {
+                        throw std::ios_base::failure("Duplicate Key, key for unknown value already provided");
+                    }
+                    // Read in the value
+                    std::vector<unsigned char> val_bytes;
+                    s >> val_bytes;
+                    unknown.emplace(std::move(key), std::move(val_bytes));
+                    break;
+                }
+            }
+        }
+        
+
+        if (!found_sep) {
+            throw std::ios_base::failure("Separator is missing at the end of a kernel map");
+        }
+    }
+
+    template <typename Stream>
+    PSBTKernel(deserialize_type, Stream& s) {
+        Unserialize(s);
+    }
+};
+
 /** A version of CTransaction with the PSBT format*/
 struct PartiallySignedTransaction
 {
@@ -612,6 +1272,9 @@ struct PartiallySignedTransaction
     Optional<std::bitset<8>> m_tx_modifiable;
     std::vector<PSBTInput> inputs;
     std::vector<PSBTOutput> outputs;
+    Optional<BlindingFactor> mweb_tx_offset;
+    Optional<BlindingFactor> mweb_stealth_offset;
+    std::vector<PSBTKernel> kernels;
     std::map<std::vector<unsigned char>, std::vector<unsigned char>> unknown;
     Optional<uint32_t> m_version;
 
@@ -665,6 +1328,18 @@ struct PartiallySignedTransaction
                 SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_TX_MODIFIABLE));
                 SerializeToVector(s, static_cast<uint8_t>(m_tx_modifiable->to_ulong()));
             }
+
+            // MWEB
+            SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_MWEB_KERNEL_COUNT));
+            SerializeToVector(s, CompactSizeWriter(kernels.size()));
+            if (mweb_tx_offset != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_MWEB_TX_OFFSET));
+                SerializeToVector(s, *mweb_tx_offset);
+            }
+            if (mweb_stealth_offset != nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_MWEB_TX_STEALTH_OFFSET));
+                SerializeToVector(s, *mweb_stealth_offset);
+            }
         }
 
         // PSBT version
@@ -690,6 +1365,10 @@ struct PartiallySignedTransaction
         for (const PSBTOutput& output : outputs) {
             s << output;
         }
+        // Write kernels
+        for (const PSBTKernel& kernel : kernels) {
+            s << kernel;
+        }
     }
 
 
@@ -709,8 +1388,10 @@ struct PartiallySignedTransaction
         bool found_sep = false;
         uint64_t input_count = 0;
         uint64_t output_count = 0;
+        uint64_t kernel_count = 0;
         bool found_input_count = false;
         bool found_output_count = false;
+        bool found_kernel_count = false;
         while(!s.empty()) {
             // Read
             std::vector<unsigned char> key;
@@ -826,6 +1507,43 @@ struct PartiallySignedTransaction
                     }
                     break;
                 }
+                // MWEB
+                case PSBT_GLOBAL_MWEB_KERNEL_COUNT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, global MWEB kernel count is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Global MWEB kernel count key is more than one byte type");
+                    }
+                    CompactSizeReader reader(kernel_count);
+                    UnserializeFromVector(s, reader);
+                    found_kernel_count = true;
+                    break;
+                }
+                case PSBT_GLOBAL_MWEB_TX_OFFSET:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, global MWEB tx offset is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Global MWEB tx offset key is more than one byte type");
+                    }
+                    BlindingFactor v;
+                    UnserializeFromVector(s, v);
+                    mweb_tx_offset = v;
+                    break;
+                }
+                case PSBT_GLOBAL_MWEB_TX_STEALTH_OFFSET:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, global MWEB stealth offset is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Global MWEB stealth offset key is more than one byte type");
+                    }
+                    BlindingFactor v;
+                    UnserializeFromVector(s, v);
+                    mweb_stealth_offset = v;
+                    break;
+                }
                 // Unknown stuff
                 default: {
                     if (unknown.count(key) > 0) {
@@ -866,6 +1584,15 @@ struct PartiallySignedTransaction
             }
             if (m_tx_modifiable != nullopt) {
                 throw std::ios_base::failure("PSBT_GLOBAL_TX_MODIFIABLE is not allowed in PSBTv0");
+            }
+            if (found_kernel_count) {
+                throw std::ios_base::failure("PSBT_GLOBAL_MWEB_KERNEL_COUNT is not allowed in PSBTv0");
+            }
+            if (mweb_tx_offset != nullopt) {
+                throw std::ios_base::failure("PSBT_GLOBAL_MWEB_TX_OFFSET is not allowed in PSBTv0");
+            }
+            if (mweb_stealth_offset != nullopt) {
+                throw std::ios_base::failure("PSBT_GLOBAL_MWEB_TX_STEALTH_OFFSET is not allowed in PSBTv0");
             }
         }
         // Disallow v1
