@@ -40,6 +40,13 @@ SECP256K1_INLINE static void secp256k1_scalar_set_int(secp256k1_scalar *r, unsig
     r->d[3] = 0;
 }
 
+SECP256K1_INLINE static void secp256k1_scalar_set_u64(secp256k1_scalar *r, uint64_t v) {
+    r->d[0] = v;
+    r->d[1] = 0;
+    r->d[2] = 0;
+    r->d[3] = 0;
+}
+
 SECP256K1_INLINE static unsigned int secp256k1_scalar_get_bits(const secp256k1_scalar *a, unsigned int offset, unsigned int count) {
     VERIFY_CHECK((offset + count - 1) >> 6 == offset >> 6);
     return (a->d[offset >> 6] >> (offset & 0x3F)) & ((((uint64_t)1) << count) - 1);
@@ -723,6 +730,143 @@ static void secp256k1_scalar_mul_512(uint64_t l[8], const secp256k1_scalar *a, c
 #endif
 }
 
+static void secp256k1_scalar_sqr_512(uint64_t l[8], const secp256k1_scalar *a) {
+#ifdef USE_ASM_X86_64
+    __asm__ __volatile__(
+    /* Preload */
+    "movq 0(%%rdi), %%r11\n"
+    "movq 8(%%rdi), %%r12\n"
+    "movq 16(%%rdi), %%r13\n"
+    "movq 24(%%rdi), %%r14\n"
+    /* (rax,rdx) = a0 * a0 */
+    "movq %%r11, %%rax\n"
+    "mulq %%r11\n"
+    /* Extract l0 */
+    "movq %%rax, 0(%%rsi)\n"
+    /* (r8,r9,r10) = (rdx,0) */
+    "movq %%rdx, %%r8\n"
+    "xorq %%r9, %%r9\n"
+    "xorq %%r10, %%r10\n"
+    /* (r8,r9,r10) += 2 * a0 * a1 */
+    "movq %%r11, %%rax\n"
+    "mulq %%r12\n"
+    "addq %%rax, %%r8\n"
+    "adcq %%rdx, %%r9\n"
+    "adcq $0, %%r10\n"
+    "addq %%rax, %%r8\n"
+    "adcq %%rdx, %%r9\n"
+    "adcq $0, %%r10\n"
+    /* Extract l1 */
+    "movq %%r8, 8(%%rsi)\n"
+    "xorq %%r8, %%r8\n"
+    /* (r9,r10,r8) += 2 * a0 * a2 */
+    "movq %%r11, %%rax\n"
+    "mulq %%r13\n"
+    "addq %%rax, %%r9\n"
+    "adcq %%rdx, %%r10\n"
+    "adcq $0, %%r8\n"
+    "addq %%rax, %%r9\n"
+    "adcq %%rdx, %%r10\n"
+    "adcq $0, %%r8\n"
+    /* (r9,r10,r8) += a1 * a1 */
+    "movq %%r12, %%rax\n"
+    "mulq %%r12\n"
+    "addq %%rax, %%r9\n"
+    "adcq %%rdx, %%r10\n"
+    "adcq $0, %%r8\n"
+    /* Extract l2 */
+    "movq %%r9, 16(%%rsi)\n"
+    "xorq %%r9, %%r9\n"
+    /* (r10,r8,r9) += 2 * a0 * a3 */
+    "movq %%r11, %%rax\n"
+    "mulq %%r14\n"
+    "addq %%rax, %%r10\n"
+    "adcq %%rdx, %%r8\n"
+    "adcq $0, %%r9\n"
+    "addq %%rax, %%r10\n"
+    "adcq %%rdx, %%r8\n"
+    "adcq $0, %%r9\n"
+    /* (r10,r8,r9) += 2 * a1 * a2 */
+    "movq %%r12, %%rax\n"
+    "mulq %%r13\n"
+    "addq %%rax, %%r10\n"
+    "adcq %%rdx, %%r8\n"
+    "adcq $0, %%r9\n"
+    "addq %%rax, %%r10\n"
+    "adcq %%rdx, %%r8\n"
+    "adcq $0, %%r9\n"
+    /* Extract l3 */
+    "movq %%r10, 24(%%rsi)\n"
+    "xorq %%r10, %%r10\n"
+    /* (r8,r9,r10) += 2 * a1 * a3 */
+    "movq %%r12, %%rax\n"
+    "mulq %%r14\n"
+    "addq %%rax, %%r8\n"
+    "adcq %%rdx, %%r9\n"
+    "adcq $0, %%r10\n"
+    "addq %%rax, %%r8\n"
+    "adcq %%rdx, %%r9\n"
+    "adcq $0, %%r10\n"
+    /* (r8,r9,r10) += a2 * a2 */
+    "movq %%r13, %%rax\n"
+    "mulq %%r13\n"
+    "addq %%rax, %%r8\n"
+    "adcq %%rdx, %%r9\n"
+    "adcq $0, %%r10\n"
+    /* Extract l4 */
+    "movq %%r8, 32(%%rsi)\n"
+    "xorq %%r8, %%r8\n"
+    /* (r9,r10,r8) += 2 * a2 * a3 */
+    "movq %%r13, %%rax\n"
+    "mulq %%r14\n"
+    "addq %%rax, %%r9\n"
+    "adcq %%rdx, %%r10\n"
+    "adcq $0, %%r8\n"
+    "addq %%rax, %%r9\n"
+    "adcq %%rdx, %%r10\n"
+    "adcq $0, %%r8\n"
+    /* Extract l5 */
+    "movq %%r9, 40(%%rsi)\n"
+    /* (r10,r8) += a3 * a3 */
+    "movq %%r14, %%rax\n"
+    "mulq %%r14\n"
+    "addq %%rax, %%r10\n"
+    "adcq %%rdx, %%r8\n"
+    /* Extract l6 */
+    "movq %%r10, 48(%%rsi)\n"
+    /* Extract l7 */
+    "movq %%r8, 56(%%rsi)\n"
+    :
+    : "S"(l), "D"(a->d)
+    : "rax", "rdx", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "cc", "memory");
+#else
+    /* 160 bit accumulator. */
+    uint64_t c0 = 0, c1 = 0;
+    uint32_t c2 = 0;
+
+    /* l[0..7] = a[0..3] * b[0..3]. */
+    muladd_fast(a->d[0], a->d[0]);
+    extract_fast(l[0]);
+    muladd2(a->d[0], a->d[1]);
+    extract(l[1]);
+    muladd2(a->d[0], a->d[2]);
+    muladd(a->d[1], a->d[1]);
+    extract(l[2]);
+    muladd2(a->d[0], a->d[3]);
+    muladd2(a->d[1], a->d[2]);
+    extract(l[3]);
+    muladd2(a->d[1], a->d[3]);
+    muladd(a->d[2], a->d[2]);
+    extract(l[4]);
+    muladd2(a->d[2], a->d[3]);
+    extract(l[5]);
+    muladd_fast(a->d[3], a->d[3]);
+    extract_fast(l[6]);
+    VERIFY_CHECK(c1 == 0);
+    l[7] = c0;
+#endif
+}
+
 #undef sumadd
 #undef sumadd_fast
 #undef muladd
@@ -746,6 +890,12 @@ static int secp256k1_scalar_shr_int(secp256k1_scalar *r, int n) {
     r->d[2] = (r->d[2] >> n) + (r->d[3] << (64 - n));
     r->d[3] = (r->d[3] >> n);
     return ret;
+}
+
+static void secp256k1_scalar_sqr(secp256k1_scalar *r, const secp256k1_scalar *a) {
+    uint64_t l[8];
+    secp256k1_scalar_sqr_512(l, a);
+    secp256k1_scalar_reduce_512(r, l);
 }
 
 static void secp256k1_scalar_split_128(secp256k1_scalar *r1, secp256k1_scalar *r2, const secp256k1_scalar *k) {
@@ -778,6 +928,91 @@ SECP256K1_INLINE static void secp256k1_scalar_mul_shift_var(secp256k1_scalar *r,
     r->d[2] = shift < 384 ? (l[2 + shiftlimbs] >> shiftlow | (shift < 320 && shiftlow ? (l[3 + shiftlimbs] << shifthigh) : 0)) : 0;
     r->d[3] = shift < 320 ? (l[3 + shiftlimbs] >> shiftlow) : 0;
     secp256k1_scalar_cadd_bit(r, 0, (l[(shift - 1) >> 6] >> ((shift - 1) & 0x3f)) & 1);
+}
+
+#define ROTL32(x,n) ((x) << (n) | (x) >> (32-(n)))
+#define QUARTERROUND(a,b,c,d) \
+  a += b; d = ROTL32(d ^ a, 16); \
+  c += d; b = ROTL32(b ^ c, 12); \
+  a += b; d = ROTL32(d ^ a, 8); \
+  c += d; b = ROTL32(b ^ c, 7);
+
+#ifdef WORDS_BIGENDIAN
+#define LE32(p) ((((p) & 0xFF) << 24) | (((p) & 0xFF00) << 8) | (((p) & 0xFF0000) >> 8) | (((p) & 0xFF000000) >> 24))
+#define BE32(p) (p)
+#else
+#define BE32(p) ((((p) & 0xFF) << 24) | (((p) & 0xFF00) << 8) | (((p) & 0xFF0000) >> 8) | (((p) & 0xFF000000) >> 24))
+#define LE32(p) (p)
+#endif
+
+static void secp256k1_scalar_chacha20(secp256k1_scalar *r1, secp256k1_scalar *r2, const unsigned char *seed, uint64_t idx) {
+    size_t n;
+    size_t over_count = 0;
+    uint32_t seed32[8];
+    uint32_t x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15;
+    int over1, over2;
+
+    memcpy((void *) seed32, (const void *) seed, 32);
+    do {
+        x0 = 0x61707865;
+        x1 = 0x3320646e;
+        x2 = 0x79622d32;
+        x3 = 0x6b206574;
+        x4 = LE32(seed32[0]);
+        x5 = LE32(seed32[1]);
+        x6 = LE32(seed32[2]);
+        x7 = LE32(seed32[3]);
+        x8 = LE32(seed32[4]);
+        x9 = LE32(seed32[5]);
+        x10 = LE32(seed32[6]);
+        x11 = LE32(seed32[7]);
+        x12 = idx;
+        x13 = idx >> 32;
+        x14 = 0;
+        x15 = over_count;
+
+        n = 10;
+        while (n--) {
+            QUARTERROUND(x0, x4, x8,x12)
+            QUARTERROUND(x1, x5, x9,x13)
+            QUARTERROUND(x2, x6,x10,x14)
+            QUARTERROUND(x3, x7,x11,x15)
+            QUARTERROUND(x0, x5,x10,x15)
+            QUARTERROUND(x1, x6,x11,x12)
+            QUARTERROUND(x2, x7, x8,x13)
+            QUARTERROUND(x3, x4, x9,x14)
+        }
+
+        x0 += 0x61707865;
+        x1 += 0x3320646e;
+        x2 += 0x79622d32;
+        x3 += 0x6b206574;
+        x4 += LE32(seed32[0]);
+        x5 += LE32(seed32[1]);
+        x6 += LE32(seed32[2]);
+        x7 += LE32(seed32[3]);
+        x8 += LE32(seed32[4]);
+        x9 += LE32(seed32[5]);
+        x10 += LE32(seed32[6]);
+        x11 += LE32(seed32[7]);
+        x12 += idx;
+        x13 += idx >> 32;
+        x14 += 0;
+        x15 += over_count;
+
+        r1->d[3] = BE32((uint64_t) x0) << 32 | BE32(x1);
+        r1->d[2] = BE32((uint64_t) x2) << 32 | BE32(x3);
+        r1->d[1] = BE32((uint64_t) x4) << 32 | BE32(x5);
+        r1->d[0] = BE32((uint64_t) x6) << 32 | BE32(x7);
+        r2->d[3] = BE32((uint64_t) x8) << 32 | BE32(x9);
+        r2->d[2] = BE32((uint64_t) x10) << 32 | BE32(x11);
+        r2->d[1] = BE32((uint64_t) x12) << 32 | BE32(x13);
+        r2->d[0] = BE32((uint64_t) x14) << 32 | BE32(x15);
+
+        over1 = secp256k1_scalar_check_overflow(r1);
+        over2 = secp256k1_scalar_check_overflow(r2);
+        over_count++;
+   } while (over1 | over2);
 }
 
 static SECP256K1_INLINE void secp256k1_scalar_cmov(secp256k1_scalar *r, const secp256k1_scalar *a, int flag) {

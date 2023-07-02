@@ -31,6 +31,22 @@
 # include <valgrind/memcheck.h>
 #endif
 
+#ifdef ENABLE_MODULE_GENERATOR
+# include "include/secp256k1_generator.h"
+#endif
+
+#ifdef ENABLE_MODULE_COMMITMENT
+# include "include/secp256k1_commitment.h"
+#endif
+
+#ifdef ENABLE_MODULE_BULLETPROOF
+# include "include/secp256k1_bulletproofs.h"
+#endif
+
+#ifdef ENABLE_MODULE_AGGSIG
+# include "include/secp256k1_aggsig.h"
+#endif
+
 #define ARG_CHECK(cond) do { \
     if (EXPECT(!(cond), 0)) { \
         secp256k1_callback_call(&ctx->illegal_callback, #cond); \
@@ -737,6 +753,46 @@ int secp256k1_ec_pubkey_combine(const secp256k1_context* ctx, secp256k1_pubkey *
     return 1;
 }
 
+int secp256k1_ec_privkey_tweak_inv(const secp256k1_context* ctx, unsigned char *seckey) {
+    secp256k1_scalar sec;
+    secp256k1_scalar inv;
+    int ret = 0;
+    int overflow = 0;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(seckey != NULL);
+
+    secp256k1_scalar_set_b32(&sec, seckey, &overflow);
+    ret = !overflow;
+    memset(seckey, 0, 32);
+    if (ret) {
+        secp256k1_scalar_inverse(&inv, &sec);
+        secp256k1_scalar_get_b32(seckey, &inv);
+        secp256k1_scalar_clear(&inv);
+    }
+    secp256k1_scalar_clear(&sec);
+    return ret;
+}
+
+int secp256k1_ec_privkey_tweak_neg(const secp256k1_context* ctx, unsigned char *seckey) {
+    secp256k1_scalar sec;
+    secp256k1_scalar neg;
+    int ret = 0;
+    int overflow = 0;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(seckey != NULL);
+
+    secp256k1_scalar_set_b32(&sec, seckey, &overflow);
+    ret = !overflow;
+    memset(seckey, 0, 32);
+    if (ret) {
+        secp256k1_scalar_negate(&neg, &sec);
+        secp256k1_scalar_get_b32(seckey, &neg);
+        secp256k1_scalar_clear(&neg);
+    }
+    secp256k1_scalar_clear(&sec);
+    return ret;
+}
+
 int secp256k1_tagged_sha256(const secp256k1_context* ctx, unsigned char *hash32, const unsigned char *tag, size_t taglen, const unsigned char *msg, size_t msglen) {
     secp256k1_sha256 sha;
     VERIFY_CHECK(ctx != NULL);
@@ -756,6 +812,22 @@ int secp256k1_tagged_sha256(const secp256k1_context* ctx, unsigned char *hash32,
 
 #ifdef ENABLE_MODULE_RECOVERY
 # include "modules/recovery/main_impl.h"
+#endif
+
+#ifdef ENABLE_MODULE_GENERATOR
+# include "modules/generator/main_impl.h"
+#endif
+
+#ifdef ENABLE_MODULE_COMMITMENT
+# include "modules/commitment/main_impl.h"
+#endif
+
+#ifdef ENABLE_MODULE_BULLETPROOF
+# include "modules/bulletproofs/main_impl.h"
+#endif
+
+#ifdef ENABLE_MODULE_AGGSIG
+# include "modules/aggsig/main_impl.h"
 #endif
 
 #ifdef ENABLE_MODULE_EXTRAKEYS
