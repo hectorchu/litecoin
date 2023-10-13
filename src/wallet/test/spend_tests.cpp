@@ -122,9 +122,9 @@ BOOST_FIXTURE_TEST_CASE(wallet_duplicated_preset_inputs_test, TestChain100Setup)
 
     LOCK(wallet->cs_wallet);
     auto available_coins = AvailableCoins(*wallet);
-    std::vector<COutput> coins = available_coins.All();
+    std::vector<GenericWalletUTXO> coins = available_coins.All();
     // Preselect the first 3 UTXO (150 BTC total)
-    std::set<COutPoint> preset_inputs = {coins[0].outpoint, coins[1].outpoint, coins[2].outpoint};
+    std::set<COutPoint> preset_inputs = {coins[0].GetOutput().outpoint, coins[1].GetOutput().outpoint, coins[2].GetOutput().outpoint};
 
     // Try to create a tx that spends more than what preset inputs + wallet selected inputs are covering for.
     // The wallet can cover up to 200 BTC, and the tx target is 299 BTC.

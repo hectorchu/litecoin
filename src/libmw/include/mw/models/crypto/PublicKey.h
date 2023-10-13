@@ -1,11 +1,10 @@
 #pragma once
 
+#include <crypto/siphash.h>
 #include <mw/common/Traits.h>
 #include <mw/models/crypto/BigInteger.h>
 #include <mw/models/crypto/SecretKey.h>
 #include <pubkey.h>
-
-#include <boost/functional/hash.hpp>
 
 class PublicKey :
     public Traits::IPrintable,
@@ -87,7 +86,9 @@ namespace std
     {
         size_t operator()(const PublicKey& pubkey) const
         {
-            return boost::hash_value(pubkey.vec());
+            CSipHasher hasher(0, 0);
+            hasher.Write(pubkey.data(), pubkey.size());
+            return static_cast<size_t>(hasher.Finalize());
         }
     };
 }

@@ -13,7 +13,7 @@ public:
     // 
     // sum(K_s) + sum(K_i) - sum(K_o) = sum(E') + x'*G
     //
-    static void Validate(const BlindingFactor& stealth_offset, const TxBody& body)
+    static void Validate(const BlindingFactor& stealth_offset, const mw::TxBody& body)
     {
         std::vector<PublicKey> lhs_keys;
 
@@ -22,7 +22,7 @@ public:
         //
         std::transform(
             body.GetOutputs().cbegin(), body.GetOutputs().cend(), std::back_inserter(lhs_keys),
-            [](const Output& output) { return output.GetSenderPubKey(); }
+            [](const mw::Output& output) { return output.GetSenderPubKey(); }
         );
 
         for (const Input& input : body.GetInputs()) {

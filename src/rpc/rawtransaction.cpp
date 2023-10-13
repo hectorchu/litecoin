@@ -85,6 +85,7 @@ static std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc)
         {RPCResult::Type::NUM, "size", "The serialized transaction size"},
         {RPCResult::Type::NUM, "vsize", "The virtual transaction size (differs from size for witness transactions)"},
         {RPCResult::Type::NUM, "weight", "The transaction's weight (between vsize*4-3 and vsize*4)"},
+        {RPCResult::Type::NUM, "mweb_weight", /*optional=*/true, "The MWEB weight of the transaction"},
         {RPCResult::Type::NUM, "version", "The version"},
         {RPCResult::Type::NUM_TIME, "locktime", "The lock time"},
         {RPCResult::Type::ARR, "vin", "",
@@ -104,12 +105,14 @@ static std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc)
                     {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
                 }},
                 {RPCResult::Type::NUM, "sequence", "The script sequence number"},
+                {RPCResult::Type::BOOL, "ismweb", "If this is an MWEB input"},
             }},
         }},
         {RPCResult::Type::ARR, "vout", "",
         {
             {RPCResult::Type::OBJ, "", "",
             {
+                {RPCResult::Type::BOOL, "ismweb", "If this is an MWEB output"},
                 {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
                 {RPCResult::Type::NUM, "n", "index"},
                 {RPCResult::Type::OBJ, "scriptPubKey", "",
@@ -160,6 +163,88 @@ static std::vector<RPCArg> CreateTxDoc()
         {"replaceable", RPCArg::Type::BOOL, RPCArg::Default{true}, "Marks this transaction as BIP125-replaceable.\n"
                 "Allows this transaction to be replaced by a transaction with higher fees. If provided, it is an error if explicit sequence numbers are incompatible."},
     };
+}
+
+// Update PSBT with information from the mempool, the UTXO set, the txindex, and the provided descriptors.
+// Optionally, sign the inputs that we can using information from the descriptors.
+PartiallySignedTransaction ProcessPSBT(const std::string& psbt_string, const std::any& context, const HidingSigningProvider& provider, int sighash_type, bool finalize)
+{
+    // MW: TODO - Need to support MWEB
+    // Unserialize the transactions
+    PartiallySignedTransaction psbtx;
+    std::string error;
+    if (!DecodeBase64PSBT(psbtx, psbt_string, error)) {
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", error));
+    }
+
+    if (g_txindex) g_txindex->BlockUntilSyncedToCurrentChain();
+    const NodeContext& node = EnsureAnyNodeContext(context);
+
+    // If we can't find the corresponding full transaction for all of our inputs,
+    // this will be used to find just the utxos for the segwit inputs for which
+    // the full transaction isn't found
+    std::map<GenericOutputID, GenericCoin> coins;
+
+    // Fetch previous transactions:
+    // First, look in the txindex and the mempool
+    for (PSBTInput& psbt_input : psbtx.inputs) {
+        // The `non_witness_utxo` is the whole previous transaction
+        if (psbt_input.non_witness_utxo) continue;
+
+        CTransactionRef tx;
+
+        // Look in the txindex
+        if (g_txindex) {
+            uint256 block_hash;
+            g_txindex->FindTx(psbt_input.prev_txid, block_hash, tx);
+        }
+        // If we still don't have it look in the mempool
+        if (!tx) {
+            tx = node.mempool->get(psbt_input.prev_txid);
+        }
+        if (tx) {
+            psbt_input.non_witness_utxo = tx;
+        } else {
+            coins[psbt_input.GetOutPoint()]; // Create empty map entry keyed by prevout
+        }
+    }
+
+    // If we still haven't found all of the inputs, look for the missing ones in the utxo set
+    if (!coins.empty()) {
+        FindCoins(node, coins);
+        for (PSBTInput& input : psbtx.inputs) {
+            // If there are still missing utxos, add them if they were found in the utxo set
+            if (!input.non_witness_utxo) {
+                const GenericCoin& coin = coins.at(input.GetOutPoint());
+                if (!coin.IsNull() && IsSegWitOutput(provider, coin.ToLTC().out.scriptPubKey)) {
+                    input.witness_utxo = coin.ToLTC().out;
+                }
+            }
+        }
+    }
+
+    const PrecomputedTransactionData& txdata = PrecomputePSBTData(psbtx);
+
+    for (unsigned int i = 0; i < psbtx.inputs.size(); ++i) {
+        if (PSBTInputSigned(psbtx.inputs.at(i))) {
+            continue;
+        }
+
+        // Update script/keypath information using descriptor data.
+        // Note that SignPSBTInput does a lot more than just constructing ECDSA signatures.
+        // We only actually care about those if our signing provider doesn't hide private
+        // information, as is the case with `descriptorprocesspsbt`
+        SignPSBTInput(provider, psbtx, /*index=*/i, &txdata, sighash_type, /*out_sigdata=*/nullptr, finalize);
+    }
+
+    // Update script/keypath information using descriptor data.
+    for (unsigned int i = 0; i < psbtx.outputs.size(); ++i) {
+        UpdatePSBTOutput(provider, psbtx, i);
+    }
+
+    RemoveUnnecessaryTransactions(psbtx, /*sighash_type=*/1);
+
+    return psbtx;
 }
 
 static RPCHelpMan getrawtransaction()
@@ -420,6 +505,8 @@ static RPCHelpMan decodescript()
         case TxoutType::SCRIPTHASH:
         case TxoutType::WITNESS_UNKNOWN:
         case TxoutType::WITNESS_V1_TAPROOT:
+        case TxoutType::WITNESS_MWEB_PEGIN:
+        case TxoutType::WITNESS_MWEB_HOGADDR:
             // Should not be wrapped
             return false;
         } // no default case, so the compiler can warn about missing cases
@@ -462,6 +549,8 @@ static RPCHelpMan decodescript()
             case TxoutType::WITNESS_V0_KEYHASH:
             case TxoutType::WITNESS_V0_SCRIPTHASH:
             case TxoutType::WITNESS_V1_TAPROOT:
+            case TxoutType::WITNESS_MWEB_PEGIN:
+            case TxoutType::WITNESS_MWEB_HOGADDR:
                 // Should not be wrapped
                 return false;
             } // no default case, so the compiler can warn about missing cases
@@ -661,9 +750,9 @@ static RPCHelpMan signrawtransactionwithkey()
     }
 
     // Fetch previous transactions (inputs):
-    std::map<COutPoint, Coin> coins;
-    for (const CTxIn& txin : mtx.vin) {
-        coins[txin.prevout]; // Create empty map entry keyed by prevout.
+    std::map<GenericOutputID, GenericCoin> coins;
+    for (const GenericInput& tx_input : mtx.GetInputs()) {
+        coins[tx_input.GetID()]; // Create empty map entry keyed by prevout.
     }
     NodeContext& node = EnsureAnyNodeContext(request.context);
     FindCoins(node, coins);
@@ -750,6 +839,11 @@ const RPCResult decodepsbt_inputs{
             {
                 {RPCResult::Type::STR, "hash", "The hash and preimage that corresponds to it."},
             }},
+            {RPCResult::Type::STR_HEX, "previous_txid", /*optional=*/ true, "TXID of the transaction containing the output being spent by this input."},
+            {RPCResult::Type::NUM, "previous_vout", /* optional=*/ true, "Index of the output being spent"},
+            {RPCResult::Type::NUM, "sequence", /* optional=*/ true, "Sequence number for this inputs"},
+            {RPCResult::Type::NUM, "time_locktime", /* optional=*/ true, "Required time-based locktime for this input"},
+            {RPCResult::Type::NUM, "height_locktime", /* optional=*/ true, "Required height-based locktime for this input"},
             {RPCResult::Type::STR_HEX, "taproot_key_path_sig", /*optional=*/ true, "hex-encoded signature for the Taproot key path spend"},
             {RPCResult::Type::ARR, "taproot_script_path_sigs", /*optional=*/ true, "",
             {
@@ -831,6 +925,10 @@ const RPCResult decodepsbt_outputs{
                     {RPCResult::Type::STR, "path", "The path"},
                 }},
             }},
+            {RPCResult::Type::NUM, "amount", /* optional=*/ true, "The amount (nValue) for this output"},
+            {RPCResult::Type::OBJ, "script", /* optional=*/ true, "The output script (scriptPubKey) for this output",
+                {{RPCResult::Type::ELISION, "", "The layout is the same as the output of scriptPubKeys in decoderawtransaction."}},
+            },
             {RPCResult::Type::STR_HEX, "taproot_internal_key", /*optional=*/ true, "The hex-encoded Taproot x-only internal key"},
             {RPCResult::Type::ARR, "taproot_tree", /*optional=*/ true, "The tuples that make up the Taproot tree, in depth first search order",
             {
@@ -883,7 +981,7 @@ static RPCHelpMan decodepsbt()
                 RPCResult{
                     RPCResult::Type::OBJ, "", "",
                     {
-                        {RPCResult::Type::OBJ, "tx", "The decoded network-serialized unsigned transaction.",
+                        {RPCResult::Type::OBJ, "tx", /*optional=*/true, "The decoded network-serialized unsigned transaction.",
                         {
                             {RPCResult::Type::ELISION, "", "The layout is the same as the output of decoderawtransaction."},
                         }},
@@ -896,7 +994,14 @@ static RPCHelpMan decodepsbt()
                                 {RPCResult::Type::STR, "path", "The path"},
                             }},
                         }},
-                        {RPCResult::Type::NUM, "psbt_version", "The PSBT version number. Not to be confused with the unsigned transaction version"},
+                        {RPCResult::Type::NUM, "tx_version", /* optional */ true, "The version number of the unsigned transaction. Not to be confused with PSBT version"},
+                        {RPCResult::Type::NUM, "fallback_locktime", /* optional */ true, "The locktime to fallback to if no inputs specify a required locktime."},
+                        {RPCResult::Type::NUM, "input_count", /* optional */ true, "The number of inputs in this psbt"},
+                        {RPCResult::Type::NUM, "output_count", /* optional */ true, "The number of outputs in this psbt."},
+                        {RPCResult::Type::BOOL, "inputs_modifiable", /* optional */ true, "Whether inputs can be modified"},
+                        {RPCResult::Type::BOOL, "outputs_modifiable", /* optional */ true, "Whether outputs can be modified"},
+                        {RPCResult::Type::BOOL, "has_sighash_single", /* optional */ true, "Whether this PSBT has SIGHASH_SINGLE inputs"},
+                        {RPCResult::Type::NUM, "psbt_version", /* optional */ true, "The PSBT version number. Not to be confused with the unsigned transaction version"},
                         {RPCResult::Type::ARR, "proprietary", "The global proprietary map",
                         {
                             {RPCResult::Type::OBJ, "", "",
@@ -932,10 +1037,12 @@ static RPCHelpMan decodepsbt()
 
     UniValue result(UniValue::VOBJ);
 
-    // Add the decoded tx
-    UniValue tx_univ(UniValue::VOBJ);
-    TxToUniv(CTransaction(*psbtx.tx), /*block_hash=*/uint256(), /*entry=*/tx_univ, /*include_hex=*/false);
-    result.pushKV("tx", tx_univ);
+    if (psbtx.tx != std::nullopt) {
+        // Add the decoded tx
+        UniValue tx_univ(UniValue::VOBJ);
+        TxToUniv(CTransaction(*psbtx.tx), /*block_hash=*/uint256(), /*entry=*/tx_univ, /*include_hex=*/false);
+        result.pushKV("tx", tx_univ);
+    }
 
     // Add the global xpubs
     UniValue global_xpubs(UniValue::VARR);
@@ -953,6 +1060,23 @@ static RPCHelpMan decodepsbt()
         }
     }
     result.pushKV("global_xpubs", global_xpubs);
+
+    // Add PSBTv2 stuff
+    if (psbtx.GetVersion() == 2) {
+        if (psbtx.tx_version != std::nullopt) {
+            result.pushKV("tx_version", *psbtx.tx_version);
+        }
+        if (psbtx.fallback_locktime != std::nullopt) {
+            result.pushKV("fallback_locktime", static_cast<uint64_t>(*psbtx.fallback_locktime));
+        }
+        result.pushKV("input_count", (uint64_t)psbtx.inputs.size());
+        result.pushKV("output_count", (uint64_t)psbtx.outputs.size());
+        if (psbtx.m_tx_modifiable != std::nullopt) {
+            result.pushKV("inputs_modifiable", psbtx.m_tx_modifiable->test(0));
+            result.pushKV("outputs_modifiable", psbtx.m_tx_modifiable->test(1));
+            result.pushKV("has_sighash_single", psbtx.m_tx_modifiable->test(2));
+        }
+    }
 
     // PSBT version
     result.pushKV("psbt_version", static_cast<uint64_t>(psbtx.GetVersion()));
@@ -1001,7 +1125,7 @@ static RPCHelpMan decodepsbt()
             have_a_utxo = true;
         }
         if (input.non_witness_utxo) {
-            txout = input.non_witness_utxo->vout[psbtx.tx->vin[i].prevout.n];
+            txout = input.non_witness_utxo->vout[*input.prev_out];
 
             UniValue non_wit(UniValue::VOBJ);
             TxToUniv(*input.non_witness_utxo, /*block_hash=*/uint256(), /*entry=*/non_wit, /*include_hex=*/false);
@@ -1109,6 +1233,25 @@ static RPCHelpMan decodepsbt()
                 hash256_preimages.pushKV(HexStr(hash), HexStr(preimage));
             }
             in.pushKV("hash256_preimages", hash256_preimages);
+        }
+
+        // PSBTv2
+        if (psbtx.GetVersion() == 2) {
+            if (!input.prev_txid.IsNull()) {
+                in.pushKV("previous_txid", input.prev_txid.GetHex());
+            }
+            if (input.prev_out != std::nullopt) {
+                in.pushKV("previous_vout", static_cast<uint64_t>(*input.prev_out));
+            }
+            if (input.sequence != std::nullopt) {
+                in.pushKV("sequence", static_cast<uint64_t>(*input.sequence));
+            }
+            if (input.time_locktime != std::nullopt) {
+                in.pushKV("time_locktime", static_cast<uint64_t>(*input.time_locktime));
+            }
+            if (input.height_locktime!= std::nullopt) {
+                in.pushKV("height_locktime", static_cast<uint64_t>(*input.height_locktime));
+            }
         }
 
         // Taproot key path signature
@@ -1235,6 +1378,18 @@ static RPCHelpMan decodepsbt()
             out.pushKV("bip32_derivs", keypaths);
         }
 
+        // PSBTv2 stuff
+        if (psbtx.GetVersion() == 2) {
+            if (output.amount != std::nullopt) {
+                out.pushKV("amount", ValueFromAmount(*output.amount));
+            }
+            if (output.script.has_value()) {
+                UniValue spk(UniValue::VOBJ);
+                ScriptToUniv(*output.script, spk, /*include_hex=*/true, /*include_address=*/true);
+                out.pushKV("script", spk);
+            }
+        }
+
         // Taproot internal key
         if (!output.m_tap_internal_key.IsNull()) {
             out.pushKV("taproot_internal_key", HexStr(output.m_tap_internal_key));
@@ -1298,8 +1453,8 @@ static RPCHelpMan decodepsbt()
         outputs.push_back(out);
 
         // Fee calculation
-        if (MoneyRange(psbtx.tx->vout[i].nValue) && MoneyRange(output_value + psbtx.tx->vout[i].nValue)) {
-            output_value += psbtx.tx->vout[i].nValue;
+        if (MoneyRange(*output.amount) && MoneyRange(output_value + *output.amount)) {
+            output_value += *output.amount;
         } else {
             // Hack to just not show fee later
             have_all_utxos = false;
@@ -1429,7 +1584,12 @@ static RPCHelpMan createpsbt()
     return RPCHelpMan{"createpsbt",
                 "\nCreates a transaction in the Partially Signed Transaction format.\n"
                 "Implements the Creator role.\n",
-                CreateTxDoc(),
+                Cat<std::vector<RPCArg>>(
+                    CreateTxDoc(),
+                    {
+                        {"psbt_version", RPCArg::Type::NUM, RPCArg::Default{2}, "The PSBT version number to use."},
+                    }
+                ),
                 RPCResult{
                     RPCResult::Type::STR, "", "The resulting raw transaction (base64-encoded string)"
                 },
@@ -1444,6 +1604,7 @@ static RPCHelpMan createpsbt()
         UniValueType(), // ARR or OBJ, checked later
         UniValue::VNUM,
         UniValue::VBOOL,
+		UniValue::VNUM
         }, true
     );
 
@@ -1454,14 +1615,15 @@ static RPCHelpMan createpsbt()
     CMutableTransaction rawTx = ConstructTransaction(request.params[0], request.params[1], request.params[2], rbf);
 
     // Make a blank psbt
-    PartiallySignedTransaction psbtx;
-    psbtx.tx = rawTx;
-    for (unsigned int i = 0; i < rawTx.vin.size(); ++i) {
-        psbtx.inputs.push_back(PSBTInput());
+    uint32_t psbt_version = 2;
+    if (!request.params[4].isNull()) {
+        psbt_version = request.params[4].getInt<int>();
     }
-    for (unsigned int i = 0; i < rawTx.vout.size(); ++i) {
-        psbtx.outputs.push_back(PSBTOutput());
+    if (psbt_version != 2 && psbt_version != 0) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "The PSBT version can only be 2 or 0");
     }
+
+    PartiallySignedTransaction psbtx(rawTx, psbt_version);
 
     // Serialize the PSBT
     CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
@@ -1523,14 +1685,7 @@ static RPCHelpMan converttopsbt()
     }
 
     // Make a blank psbt
-    PartiallySignedTransaction psbtx;
-    psbtx.tx = tx;
-    for (unsigned int i = 0; i < tx.vin.size(); ++i) {
-        psbtx.inputs.push_back(PSBTInput());
-    }
-    for (unsigned int i = 0; i < tx.vout.size(); ++i) {
-        psbtx.outputs.push_back(PSBTOutput());
-    }
+    PartiallySignedTransaction psbtx(tx, 2 /* version */);
 
     // Serialize the PSBT
     CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
@@ -1566,11 +1721,11 @@ static RPCHelpMan utxoupdatepsbt()
     RPCTypeCheck(request.params, {UniValue::VSTR, UniValue::VARR}, true);
 
     // Unserialize the transactions
-    PartiallySignedTransaction psbtx;
-    std::string error;
-    if (!DecodeBase64PSBT(psbtx, request.params[0].get_str(), error)) {
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", error));
-    }
+    //PartiallySignedTransaction psbtx;
+    //std::string error;
+    //if (!DecodeBase64PSBT(psbtx, request.params[0].get_str(), error)) {
+    //    throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", error));
+    //}
 
     // Parse descriptors, if any.
     FlatSigningProvider provider;
@@ -1580,53 +1735,60 @@ static RPCHelpMan utxoupdatepsbt()
             EvalDescriptorStringOrObject(descs[i], provider);
         }
     }
-    // We don't actually need private keys further on; hide them as a precaution.
-    HidingSigningProvider public_provider(&provider, /*hide_secret=*/true, /*hide_origin=*/false);
+    //// We don't actually need private keys further on; hide them as a precaution.
+    //HidingSigningProvider public_provider(&provider, /*hide_secret=*/true, /*hide_origin=*/false);
 
-    // Fetch previous transactions (inputs):
-    CCoinsView viewDummy;
-    CCoinsViewCache view(&viewDummy);
-    {
-        NodeContext& node = EnsureAnyNodeContext(request.context);
-        const CTxMemPool& mempool = EnsureMemPool(node);
-        ChainstateManager& chainman = EnsureChainman(node);
-        LOCK2(cs_main, mempool.cs);
-        CCoinsViewCache &viewChain = chainman.ActiveChainstate().CoinsTip();
-        CCoinsViewMemPool viewMempool(&viewChain, mempool);
-        view.SetBackend(viewMempool); // temporarily switch cache backend to db+mempool view
+    //// Fetch previous transactions (inputs):
+    //CCoinsView viewDummy;
+    //CCoinsViewCache view(&viewDummy);
+    //{
+    //    NodeContext& node = EnsureAnyNodeContext(request.context);
+    //    const CTxMemPool& mempool = EnsureMemPool(node);
+    //    ChainstateManager& chainman = EnsureChainman(node);
+    //    LOCK2(cs_main, mempool.cs);
+    //    CCoinsViewCache &viewChain = chainman.ActiveChainstate().CoinsTip();
+    //    CCoinsViewMemPool viewMempool(&viewChain, mempool);
+    //    view.SetBackend(viewMempool); // temporarily switch cache backend to db+mempool view
 
-        for (const CTxIn& txin : psbtx.tx->vin) {
-            view.AccessCoin(txin.prevout); // Load entries from viewChain into view; can fail.
-        }
+    //    for (const PSBTInput& input : psbtx.inputs) {
+    //        view.AccessCoin(input.GetOutPoint()); // Load entries from viewChain into view; can fail.
+    //    }
 
-        view.SetBackend(viewDummy); // switch back to avoid locking mempool for too long
-    }
+    //    view.SetBackend(viewDummy); // switch back to avoid locking mempool for too long
+    //}
 
-    // Fill the inputs
-    const PrecomputedTransactionData txdata = PrecomputePSBTData(psbtx);
-    for (unsigned int i = 0; i < psbtx.tx->vin.size(); ++i) {
-        PSBTInput& input = psbtx.inputs.at(i);
+    //// Fill the inputs
+    //const PrecomputedTransactionData txdata = PrecomputePSBTData(psbtx);
+    //for (unsigned int i = 0; i < psbtx.inputs.size(); ++i) {
+    //    PSBTInput& input = psbtx.inputs.at(i);
 
-        if (input.non_witness_utxo || !input.witness_utxo.IsNull()) {
-            continue;
-        }
+    //    if (input.non_witness_utxo || !input.witness_utxo.IsNull()) {
+    //        continue;
+    //    }
 
-        const Coin& coin = view.AccessCoin(psbtx.tx->vin[i].prevout);
+    //    const Coin& coin = view.AccessCoin(input.GetOutPoint());
 
-        if (IsSegWitOutput(provider, coin.out.scriptPubKey)) {
-            input.witness_utxo = coin.out;
-        }
+    //    if (IsSegWitOutput(provider, coin.out.scriptPubKey)) {
+    //        input.witness_utxo = coin.out;
+    //    }
 
-        // Update script/keypath information using descriptor data.
-        // Note that SignPSBTInput does a lot more than just constructing ECDSA signatures
-        // we don't actually care about those here, in fact.
-        SignPSBTInput(public_provider, psbtx, i, &txdata, /*sighash=*/1);
-    }
+    //    // Update script/keypath information using descriptor data.
+    //    // Note that SignPSBTInput does a lot more than just constructing ECDSA signatures
+    //    // we don't actually care about those here, in fact.
+    //    SignPSBTInput(public_provider, psbtx, i, &txdata, /*sighash=*/1);
+    //}
 
-    // Update script/keypath information using descriptor data.
-    for (unsigned int i = 0; i < psbtx.tx->vout.size(); ++i) {
-        UpdatePSBTOutput(public_provider, psbtx, i);
-    }
+    //// Update script/keypath information using descriptor data.
+    //for (unsigned int i = 0; i < psbtx.outputs.size(); ++i) {
+    //    UpdatePSBTOutput(public_provider, psbtx, i);
+    //}
+
+    const PartiallySignedTransaction psbtx = ProcessPSBT(
+        request.params[0].get_str(),
+        request.context,
+        HidingSigningProvider(&provider, /*hide_secret=*/true, /*hide_origin=*/false),
+        /*sighash_type=*/SIGHASH_ALL,
+        /*finalize=*/false);
 
     CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
     ssTx << psbtx;
@@ -1664,7 +1826,7 @@ static RPCHelpMan joinpsbts()
         throw JSONRPCError(RPC_INVALID_PARAMETER, "At least two PSBTs are required to join PSBTs.");
     }
 
-    uint32_t best_version = 1;
+    int32_t best_version = 1;
     uint32_t best_locktime = 0xffffffff;
     for (unsigned int i = 0; i < txs.size(); ++i) {
         PartiallySignedTransaction psbtx;
@@ -1672,32 +1834,38 @@ static RPCHelpMan joinpsbts()
         if (!DecodeBase64PSBT(psbtx, txs[i].get_str(), error)) {
             throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", error));
         }
+        if (psbtx.GetVersion() != 0) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "joinpsbts only operates on version 0 PSBTs");
+        }
         psbtxs.push_back(psbtx);
         // Choose the highest version number
-        if (static_cast<uint32_t>(psbtx.tx->nVersion) > best_version) {
-            best_version = static_cast<uint32_t>(psbtx.tx->nVersion);
+        if (*psbtx.tx_version > best_version) {
+            best_version = *psbtx.tx_version;
         }
         // Choose the lowest lock time
-        if (psbtx.tx->nLockTime < best_locktime) {
-            best_locktime = psbtx.tx->nLockTime;
+        if (*psbtx.fallback_locktime < best_locktime) {
+            best_locktime = *psbtx.fallback_locktime;
         }
     }
 
     // Create a blank psbt where everything will be added
     PartiallySignedTransaction merged_psbt;
+    merged_psbt.tx_version = best_version;
+    merged_psbt.fallback_locktime = best_locktime;
+    // TODO: Remove for PSBTv2
     merged_psbt.tx = CMutableTransaction();
-    merged_psbt.tx->nVersion = static_cast<int32_t>(best_version);
+    merged_psbt.tx->nVersion = best_version;
     merged_psbt.tx->nLockTime = best_locktime;
 
     // Merge
     for (auto& psbt : psbtxs) {
-        for (unsigned int i = 0; i < psbt.tx->vin.size(); ++i) {
-            if (!merged_psbt.AddInput(psbt.tx->vin[i], psbt.inputs[i])) {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Input %s:%d exists in multiple PSBTs", psbt.tx->vin[i].prevout.hash.ToString(), psbt.tx->vin[i].prevout.n));
+        for (unsigned int i = 0; i < psbt.inputs.size(); ++i) {
+            if (!merged_psbt.AddInput(psbt.inputs[i])) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Input %s exists in multiple PSBTs", psbt.inputs[i].ToGenericInput().ToString()));
             }
         }
-        for (unsigned int i = 0; i < psbt.tx->vout.size(); ++i) {
-            merged_psbt.AddOutput(psbt.tx->vout[i], psbt.outputs[i]);
+        for (unsigned int i = 0; i < psbt.outputs.size(); ++i) {
+            merged_psbt.AddOutput(psbt.outputs[i]);
         }
         for (auto& xpub_pair : psbt.m_xpubs) {
             if (merged_psbt.m_xpubs.count(xpub_pair.first) == 0) {
@@ -1720,14 +1888,17 @@ static RPCHelpMan joinpsbts()
     Shuffle(output_indices.begin(), output_indices.end(), FastRandomContext());
 
     PartiallySignedTransaction shuffled_psbt;
+    shuffled_psbt.tx_version = merged_psbt.tx_version;
+    shuffled_psbt.fallback_locktime = merged_psbt.fallback_locktime;
+    // TODO: Remove for PSBTv2
     shuffled_psbt.tx = CMutableTransaction();
     shuffled_psbt.tx->nVersion = merged_psbt.tx->nVersion;
     shuffled_psbt.tx->nLockTime = merged_psbt.tx->nLockTime;
     for (int i : input_indices) {
-        shuffled_psbt.AddInput(merged_psbt.tx->vin[i], merged_psbt.inputs[i]);
+        shuffled_psbt.AddInput(merged_psbt.inputs[i]);
     }
     for (int i : output_indices) {
-        shuffled_psbt.AddOutput(merged_psbt.tx->vout[i], merged_psbt.outputs[i]);
+        shuffled_psbt.AddOutput(merged_psbt.outputs[i]);
     }
     shuffled_psbt.unknown.insert(merged_psbt.unknown.begin(), merged_psbt.unknown.end());
 

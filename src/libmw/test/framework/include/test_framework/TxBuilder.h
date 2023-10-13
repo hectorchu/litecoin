@@ -47,7 +47,7 @@ private:
 
     std::vector<Input> m_inputs;
     std::vector<TxOutput> m_outputs;
-    std::vector<Kernel> m_kernels;
+    std::vector<mw::Kernel> m_kernels;
 };
 
 END_NAMESPACE

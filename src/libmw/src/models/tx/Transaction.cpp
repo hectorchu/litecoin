@@ -2,14 +2,14 @@
 #include <mw/consensus/KernelSumValidator.h>
 #include <mw/consensus/StealthSumValidator.h>
 
-using namespace mw;
+MW_NAMESPACE
 
 Transaction::CPtr Transaction::Create(
     BlindingFactor kernel_offset,
     BlindingFactor stealth_offset,
     std::vector<Input> inputs,
-    std::vector<Output> outputs,
-    std::vector<Kernel> kernels)
+    std::vector<mw::Output> outputs,
+    std::vector<mw::Kernel> kernels)
 {
     std::sort(inputs.begin(), inputs.end(), InputSort);
     std::sort(outputs.begin(), outputs.end(), OutputSort);
@@ -18,7 +18,7 @@ Transaction::CPtr Transaction::Create(
     return std::make_shared<mw::Transaction>(
         std::move(kernel_offset),
         std::move(stealth_offset),
-        TxBody{
+        mw::TxBody{
             std::move(inputs),
             std::move(outputs),
             std::move(kernels)
@@ -34,13 +34,13 @@ bool Transaction::IsStandard() const noexcept
         }
     }
 
-    for (const Kernel& kernel : GetKernels()) {
+    for (const mw::Kernel& kernel : GetKernels()) {
         if (!kernel.IsStandard()) {
             return false;
         }
     }
 
-    for (const Output& output : GetOutputs()) {
+    for (const mw::Output& output : GetOutputs()) {
         if (!output.IsStandard()) {
             return false;
         }
@@ -56,3 +56,5 @@ void Transaction::Validate() const
     KernelSumValidator::ValidateForTx(*this);
     StealthSumValidator::Validate(m_stealthOffset, m_body);
 }
+
+END_NAMESPACE

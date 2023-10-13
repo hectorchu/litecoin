@@ -19,14 +19,14 @@ public:
 	// Retrieve UTXOs with matching output IDs.
 	// If there are multiple UTXOs for an output ID, the most recent will be returned.
 	//
-	std::unordered_map<mw::Hash, UTXO::CPtr> GetUTXOs(
+	std::unordered_map<mw::Hash, mw::UTXO::CPtr> GetUTXOs(
 		const std::vector<mw::Hash>& output_ids
 	) const;
 
 	//
 	// Add the UTXOs
 	//
-	void AddUTXOs(const std::vector<UTXO::CPtr>& utxos);
+	void AddUTXOs(const std::vector<mw::UTXO::CPtr>& utxos);
 
 	//
 	// Removes the UTXOs for the given output IDs.

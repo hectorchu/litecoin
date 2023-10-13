@@ -4,6 +4,9 @@
 #include <mw/crypto/Bulletproofs.h>
 #include <mw/crypto/Pedersen.h>
 #include <mw/crypto/Schnorr.h>
+#include <mw/common/Logger.h>
+
+MW_NAMESPACE
 
 Output Output::Create(
     BlindingFactor* blind_out,
@@ -55,6 +58,7 @@ Output Output::Create(
     OutputMessage message{features, Ke, view_tag, mv, mn};
 
     // Probably best to store sender_key so sender can identify all outputs they've sent?
+    LOG_INFO("Creating rangeproof");
     RangeProof::CPtr pRangeProof = Bulletproofs::Generate(
         value,
         SecretKey(blind.vec()),
@@ -72,6 +76,7 @@ Output Output::Create(
         .Append(message.GetHash())
         .Append(pRangeProof->GetHash())
         .hash();
+    LOG_INFO("Signing output");
     Signature signature = Schnorr::Sign(sender_privkey.data(), sig_message);
 
     if (blind_out != nullptr) {
@@ -104,3 +109,5 @@ ProofData Output::BuildProofData() const noexcept
 {
     return ProofData{ m_commitment, m_pProof, m_message.Serialized() };
 }
+
+END_NAMESPACE

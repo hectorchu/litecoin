@@ -15,7 +15,9 @@ from test_framework.blocktools import COINBASE_MATURITY
 import test_framework.messages
 from test_framework.p2p import (
     P2PInterface,
-    P2P_SERVICES,
+    NODE_NETWORK,
+    NODE_WITNESS,
+    NODE_MWEB,
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -214,7 +216,7 @@ class NetTest(BitcoinTestFramework):
         assert_greater_than(10000, len(node_addresses))
         for a in node_addresses:
             assert_greater_than(a["time"], 1527811200)  # 1st June 2018
-            assert_equal(a["services"], P2P_SERVICES)
+            assert_equal(a["services"], NODE_NETWORK | NODE_WITNESS | NODE_MWEB)
             assert a["address"] in imported_addrs
             assert_equal(a["port"], 8333)
             assert_equal(a["network"], "ipv4")
@@ -225,7 +227,7 @@ class NetTest(BitcoinTestFramework):
         assert_equal(res[0]["address"], ipv6_addr)
         assert_equal(res[0]["network"], "ipv6")
         assert_equal(res[0]["port"], 8333)
-        assert_equal(res[0]["services"], P2P_SERVICES)
+        assert_equal(res[0]["services"], NODE_NETWORK | NODE_WITNESS | NODE_MWEB)
 
         # Test for the absence of onion, I2P and CJDNS addresses.
         for network in ["onion", "i2p", "cjdns"]:

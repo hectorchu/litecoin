@@ -24,7 +24,7 @@ public:
     //
     // Constructors
     //
-    Block(const mw::Header::CPtr& pHeader, TxBody body)
+    Block(const mw::Header::CPtr& pHeader, mw::TxBody body)
         : m_pHeader(pHeader), m_body(std::move(body)) { }
     Block(const Block& other) = default;
     Block(Block&& other) noexcept = default;
@@ -40,11 +40,11 @@ public:
     // Getters
     //
     const mw::Header::CPtr& GetHeader() const noexcept { return m_pHeader; }
-    const TxBody& GetTxBody() const noexcept { return m_body; }
+    const mw::TxBody& GetTxBody() const noexcept { return m_body; }
 
     const std::vector<Input>& GetInputs() const noexcept { return m_body.GetInputs(); }
-    const std::vector<Output>& GetOutputs() const noexcept { return m_body.GetOutputs(); }
-    const std::vector<Kernel>& GetKernels() const noexcept { return m_body.GetKernels(); }
+    const std::vector<mw::Output>& GetOutputs() const noexcept { return m_body.GetOutputs(); }
+    const std::vector<mw::Kernel>& GetKernels() const noexcept { return m_body.GetKernels(); }
 
     int32_t GetHeight() const noexcept { return m_pHeader->GetHeight(); }
     const BlindingFactor& GetKernelOffset() const noexcept { return m_pHeader->GetKernelOffset(); }
@@ -77,7 +77,7 @@ public:
 
 private:
     mw::Header::CPtr m_pHeader;
-    TxBody m_body;
+    mw::TxBody m_body;
 };
 
 class MutBlock
@@ -99,13 +99,13 @@ public:
         return *this;
     }
 
-    MutBlock& SetOutputs(std::vector<Output> outputs) noexcept
+    MutBlock& SetOutputs(std::vector<mw::Output> outputs) noexcept
     {
         m_outputs = std::move(outputs);
         return *this;
     }
 
-    MutBlock& SetKernels(std::vector<Kernel> kernels) noexcept
+    MutBlock& SetKernels(std::vector<mw::Kernel> kernels) noexcept
     {
         m_kernels = std::move(kernels);
         return *this;
@@ -115,15 +115,15 @@ public:
     {
         return std::make_shared<mw::Block>(
             m_header.Build(),
-            TxBody(m_inputs, m_outputs, m_kernels)
+            mw::TxBody(m_inputs, m_outputs, m_kernels)
         );
     }
 
 private:
     MutHeader m_header;
     std::vector<Input> m_inputs;
-    std::vector<Output> m_outputs;
-    std::vector<Kernel> m_kernels;
+    std::vector<mw::Output> m_outputs;
+    std::vector<mw::Kernel> m_kernels;
 };
 
 END_NAMESPACE

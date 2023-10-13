@@ -33,6 +33,7 @@ const std::string ACTIVEEXTERNALSPK{"activeexternalspk"};
 const std::string ACTIVEINTERNALSPK{"activeinternalspk"};
 const std::string BESTBLOCK_NOMERKLE{"bestblock_nomerkle"};
 const std::string BESTBLOCK{"bestblock"};
+const std::string COIN{"mweb_coin"};
 const std::string CRYPTED_KEY{"ckey"};
 const std::string CSCRIPT{"cscript"};
 const std::string DEFAULTKEY{"defaultkey"};
@@ -61,6 +62,12 @@ const std::string WATCHMETA{"watchmeta"};
 const std::string WATCHS{"watchs"};
 const std::unordered_set<std::string> LEGACY_TYPES{CRYPTED_KEY, CSCRIPT, DEFAULTKEY, HDCHAIN, KEYMETA, KEY, OLD_KEY, POOL, WATCHMETA, WATCHS};
 } // namespace DBKeys
+
+const int CHDChain::VERSION_HD_BASE;
+const int CHDChain::VERSION_HD_CHAIN_SPLIT;
+const int CHDChain::VERSION_HD_MWEB;
+const int CHDChain::VERSION_HD_MWEB_WATCH;
+const int CHDChain::CURRENT_VERSION;
 
 //
 // WalletBatch
@@ -152,6 +159,12 @@ bool WalletBatch::WriteMasterKey(unsigned int nID, const CMasterKey& kMasterKey)
 bool WalletBatch::WriteCScript(const uint160& hash, const CScript& redeemScript)
 {
     return WriteIC(std::make_pair(DBKeys::CSCRIPT, hash), redeemScript, false);
+}
+
+bool WalletBatch::WriteMWEBCoin(const mw::Coin& coin)
+{
+    // MW: TODO - Handle multiple coins with matching output IDs
+    return WriteIC(std::make_pair(DBKeys::COIN, coin.output_id), coin, true);
 }
 
 bool WalletBatch::WriteWatchOnly(const CScript &dest, const CKeyMetadata& keyMeta)
@@ -287,14 +300,57 @@ bool WalletBatch::WriteDescriptorCacheItems(const uint256& desc_id, const Descri
     return true;
 }
 
-bool WalletBatch::WriteLockedUTXO(const COutPoint& output)
+class SerializableOutputIndex
 {
-    return WriteIC(std::make_pair(DBKeys::LOCKED_UTXO, std::make_pair(output.hash, output.n)), uint8_t{'1'});
+    GenericOutputID m_id;
+
+public:
+    SerializableOutputIndex() = default;
+    SerializableOutputIndex(GenericOutputID id)
+        : m_id(std::move(id)) { }
+
+    const GenericOutputID& Get() { return m_id; }
+
+    template <typename Stream>
+    inline void Serialize(Stream& s) const {
+        if (m_id.IsOutPoint()) {
+            s << uint8_t(0);
+            s << m_id.ToOutPoint();
+        } else {
+            s << uint8_t(1);
+            s << m_id.ToMWEB();
+        }
+    }
+
+    template <typename Stream>
+    inline void Unserialize(Stream& s) {
+        uint8_t type;
+        s >> type;
+
+        if (type > 1) {
+            throw std::ios_base::failure("Invalid GenericOutputID type");
+        }
+
+        if (type == 0) {
+            COutPoint outpoint;
+            s >> outpoint;
+            m_id = outpoint;
+        } else {
+            mw::Hash hash;
+            s >> hash;
+            m_id = hash;
+        }
+    }
+};
+
+bool WalletBatch::WriteLockedUTXO(const GenericOutputID& output)
+{
+    return WriteIC(std::make_pair(DBKeys::LOCKED_UTXO, SerializableOutputIndex(output)), uint8_t{'1'});
 }
 
-bool WalletBatch::EraseLockedUTXO(const COutPoint& output)
+bool WalletBatch::EraseLockedUTXO(const GenericOutputID& output)
 {
-    return EraseIC(std::make_pair(DBKeys::LOCKED_UTXO, std::make_pair(output.hash, output.n)));
+    return EraseIC(std::make_pair(DBKeys::LOCKED_UTXO, SerializableOutputIndex(output)));
 }
 
 class CWalletScanState {
@@ -307,6 +363,7 @@ public:
     bool fIsEncrypted{false};
     bool fAnyUnordered{false};
     std::vector<uint256> vWalletUpgrade;
+    std::vector<uint256> vWalletRemove;
     std::map<OutputType, uint256> m_active_external_spks;
     std::map<OutputType, uint256> m_active_internal_spks;
     std::map<uint256, DescriptorCache> m_descriptor_caches;
@@ -356,8 +413,16 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                     return false;
                 }
                 ssValue >> wtx;
-                if (wtx.GetHash() != hash)
-                    return false;
+                if (wtx.GetHash() != hash) {
+					// We previously calculated hash for mweb_wtx_info in an impractical way.
+					// We changed to just using the output ID as hash, so need to upgrade any existing txs.
+                    if (wtx.mweb_wtx_info) {
+                        wss.vWalletRemove.push_back(hash);
+                        wss.vWalletUpgrade.push_back(wtx.GetHash());
+                    } else {
+                        return false;
+                    }
+                }
 
                 // Undo serialize changes in 31600
                 if (31404 <= wtx.fTimeReceivedIsTxTime && wtx.fTimeReceivedIsTxTime <= 31703)
@@ -388,6 +453,11 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             if (!pwallet->LoadToWallet(hash, fill_wtx)) {
                 return false;
             }
+        } else if (strType == DBKeys::COIN) {
+            mw::Coin coin;
+            ssValue >> coin;
+            pwallet->GetMWWallet()->LoadToWallet(coin);
+            return true;
         } else if (strType == DBKeys::WATCHS) {
             wss.nWatchKeys++;
             CScript script;
@@ -511,7 +581,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                 // See https://github.com/bitcoin/bitcoin/pull/12924
                 bool internal = false;
                 uint32_t index = 0;
-                if (keyMeta.hdKeypath != "s" && keyMeta.hdKeypath != "m") {
+                if (keyMeta.hdKeypath != "s" && keyMeta.hdKeypath != "m" && !keyMeta.key_origin.mweb_index) { // MW: TODO - Handle parsing of Keypaths here
                     std::vector<uint32_t> path;
                     if (keyMeta.has_key_origin) {
                         // We have a key origin, so pull it from its path vector
@@ -536,7 +606,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                         strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000) for the element at index 0", path[0]);
                         return false;
                     }
-                    if (path[1] != 0x80000000 && path[1] != (1 | 0x80000000)) {
+                    if (path[1] != 0x80000000 && path[1] != (1 | 0x80000000) && path[1] != (100 | 0x80000000)) {
                         strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000 or 0x80000001) for the element at index 1", path[1]);
                         return false;
                     }
@@ -556,8 +626,12 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                     chain.nVersion = CHDChain::VERSION_HD_BASE;
                     chain.seed_id = keyMeta.hd_seed_id;
                 }
-                if (internal) {
-                    chain.nVersion = CHDChain::VERSION_HD_CHAIN_SPLIT;
+
+                if (!!keyMeta.key_origin.mweb_index) {
+                    chain.nVersion = std::max(chain.nVersion, CHDChain::VERSION_HD_MWEB_WATCH);
+                    chain.nMWEBIndexCounter = std::max(chain.nMWEBIndexCounter, *keyMeta.key_origin.mweb_index + 1);
+                } else if (internal) {
+                    chain.nVersion = std::max(chain.nVersion, CHDChain::VERSION_HD_CHAIN_SPLIT);
                     chain.nInternalChainCounter = std::max(chain.nInternalChainCounter, index + 1);
                 } else {
                     chain.nExternalChainCounter = std::max(chain.nExternalChainCounter, index + 1);
@@ -728,11 +802,9 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             wss.m_descriptor_crypt_keys.insert(std::make_pair(std::make_pair(desc_id, pubkey.GetID()), std::make_pair(pubkey, privkey)));
             wss.fIsEncrypted = true;
         } else if (strType == DBKeys::LOCKED_UTXO) {
-            uint256 hash;
-            uint32_t n;
-            ssKey >> hash;
-            ssKey >> n;
-            pwallet->LockCoin(COutPoint(hash, n));
+            SerializableOutputIndex output_idx;
+			ssKey >> output_idx;
+            pwallet->LockCoin(output_idx.Get());
         } else if (strType != DBKeys::BESTBLOCK && strType != DBKeys::BESTBLOCK_NOMERKLE &&
                    strType != DBKeys::MINVERSION && strType != DBKeys::ACENTRY &&
                    strType != DBKeys::VERSION && strType != DBKeys::SETTINGS &&
@@ -916,8 +988,21 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
         }
     }
 
+    // MWEB: Load MWEB keychain
+    auto mweb_spk_man = pwallet->GetScriptPubKeyMan(OutputType::MWEB, false);
+    if (mweb_spk_man) {
+        pwallet->WalletLogPrintf("Loading MWEB Keychain\n");
+        mweb_spk_man->LoadMWEBKeychain();
+    }
+    
+    pwallet->WalletLogPrintf("Writing txs\n");
     for (const uint256& hash : wss.vWalletUpgrade)
         WriteTx(pwallet->mapWallet.at(hash));
+    
+    pwallet->WalletLogPrintf("Erasing txs\n");
+    for (const uint256& hash : wss.vWalletRemove) {
+        EraseTx(hash);
+    }
 
     // Rewrite encrypted wallets of versions 0.4.0 and 0.5.0rc:
     if (wss.fIsEncrypted && (last_client == 40000 || last_client == 50000))
@@ -925,13 +1010,15 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
 
     if (!has_last_client || last_client != CLIENT_VERSION) // Update
         m_batch->Write(DBKeys::VERSION, CLIENT_VERSION);
-
+    
+    pwallet->WalletLogPrintf("Reordering transactions\n");
     if (wss.fAnyUnordered)
         result = pwallet->ReorderTransactions();
 
     // Upgrade all of the wallet keymetadata to have the hd master key id
     // This operation is not atomic, but if it fails, updated entries are still backwards compatible with older software
     try {
+    pwallet->WalletLogPrintf("Upgrading key metadata\n");
         pwallet->UpgradeKeyMetadata();
     } catch (...) {
         result = DBErrors::CORRUPT;
@@ -940,11 +1027,13 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
     // Upgrade all of the descriptor caches to cache the last hardened xpub
     // This operation is not atomic, but if it fails, only new entries are added so it is backwards compatible
     try {
+    pwallet->WalletLogPrintf("Upgrading descriptor cache\n");
         pwallet->UpgradeDescriptorCache();
     } catch (...) {
         result = DBErrors::CORRUPT;
     }
-
+    
+    pwallet->WalletLogPrintf("Setting inactive chains\n");
     // Set the inactive chain
     if (wss.m_hd_chains.size() > 0) {
         LegacyScriptPubKeyMan* legacy_spkm = pwallet->GetLegacyScriptPubKeyMan();
@@ -958,7 +1047,8 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
             }
         }
     }
-
+    
+    pwallet->WalletLogPrintf("LoadWallet finished\n");
     return result;
 }
 
@@ -1001,7 +1091,7 @@ DBErrors WalletBatch::FindWalletTx(std::vector<uint256>& vTxHash, std::list<CWal
                 uint256 hash;
                 ssKey >> hash;
                 vTxHash.push_back(hash);
-                vWtx.emplace_back(/*tx=*/nullptr, TxStateInactive{});
+                vWtx.emplace_back(/*tx=*/nullptr, TxStateInactive{}, std::nullopt);
                 ssValue >> vWtx.back();
             }
         }

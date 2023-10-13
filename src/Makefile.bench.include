@@ -66,7 +66,8 @@ bench_bench_litecoin_LDADD = \
   $(LIBSECP256K1) \
   $(LIBUNIVALUE) \
   $(EVENT_PTHREADS_LIBS) \
-  $(EVENT_LIBS)
+  $(EVENT_LIBS) \
+  $(LIBMW)
 
 if ENABLE_ZMQ
 bench_bench_litecoin_LDADD += $(LIBBITCOIN_ZMQ) $(ZMQ_LIBS)

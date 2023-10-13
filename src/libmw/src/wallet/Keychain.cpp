@@ -7,7 +7,7 @@
 
 MW_NAMESPACE
 
-bool Keychain::RewindOutput(const Output& output, mw::Coin& coin) const
+bool Keychain::RewindOutput(const mw::Output& output, mw::Coin& coin) const
 {
     if (!output.HasStandardFields()) {
         return false;
@@ -52,7 +52,7 @@ bool Keychain::RewindOutput(const Output& output, mw::Coin& coin) const
 
     // v0.21.2 incorrectly generated MWEB keys from the pre-split keypool for upgraded wallets.
     // These keys will not have an mweb_index, so we set the address_index as CUSTOM_KEY.
-    coin.address_index = pMetadata->mweb_index.get_value_or(CUSTOM_KEY);
+    coin.address_index = pMetadata->key_origin.mweb_index.value_or(CUSTOM_KEY);
     coin.blind = std::make_optional(mask.GetRawBlind());
     coin.amount = value;
     coin.output_id = output.GetOutputID();

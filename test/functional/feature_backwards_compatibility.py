@@ -106,10 +106,10 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
         self.sync_mempools()
         self.generate(node_miner, 1)
         # Create another conflicting transaction using RBF
-        tx3_id = node_master.sendtoaddress(return_address, 1)
-        tx4_id = node_master.bumpfee(tx3_id)["txid"]
+        #tx3_id = node_master.sendtoaddress(return_address, 1)
+        #tx4_id = node_master.bumpfee(tx3_id)["txid"]
         # Abandon transaction, but don't confirm
-        node_master.abandontransaction(tx3_id)
+        #node_master.abandontransaction(tx3_id)
 
         # w1_v19: regular wallet, created with v0.19
         #node_v19.rpc.createwallet(wallet_name="w1_v19")

@@ -747,6 +747,9 @@ void InitParameterInteraction(ArgsManager& args)
  */
 void InitLogging(const ArgsManager& args)
 {
+    // MWEB: Initialize MWEB Logger
+    LoggerAPI::Initialize([](const std::string& logstr) { LogPrintf(logstr.c_str()); });
+	
     init::SetLoggingOptions(args);
     init::LogPackageVersion();
 }
@@ -756,7 +759,7 @@ namespace { // Variables internal to initialization process only
 int nMaxConnections;
 int nUserMaxConnections;
 int nFD;
-ServiceFlags nLocalServices = ServiceFlags(NODE_NETWORK_LIMITED | NODE_WITNESS);
+ServiceFlags nLocalServices = ServiceFlags(NODE_NETWORK_LIMITED | NODE_WITNESS | NODE_MWEB);
 int64_t peer_connect_timeout;
 std::set<BlockFilterType> g_enabled_filter_types;
 
@@ -990,7 +993,7 @@ bool AppInitParameterInteraction(const ArgsManager& args, bool use_syscall_sandb
     if (args.GetIntArg("-rpcserialversion", DEFAULT_RPC_SERIALIZE_VERSION) < 0)
         return InitError(Untranslated("rpcserialversion must be non-negative."));
 
-    if (args.GetIntArg("-rpcserialversion", DEFAULT_RPC_SERIALIZE_VERSION) > 1)
+    if (args.GetIntArg("-rpcserialversion", DEFAULT_RPC_SERIALIZE_VERSION) > 2)
         return InitError(Untranslated("Unknown rpcserialversion requested."));
 
     nMaxTipAge = args.GetIntArg("-maxtipage", DEFAULT_MAX_TIP_AGE);

@@ -7,16 +7,18 @@
 
 #include <test_framework/TestMWEB.h>
 
+using namespace mw;
+
 BOOST_FIXTURE_TEST_SUITE(TestWeight, MWEBTestingSetup)
 
-static std::vector<Output> CreateStandardOutputs(const size_t num_outputs)
+static std::vector<mw::Output> CreateStandardOutputs(const size_t num_outputs)
 {
-    std::vector<Output> outputs;
+    std::vector<mw::Output> outputs;
     for (size_t i = 0; i < num_outputs; i++) {
         OutputMessage message;
         message.features = (uint8_t)GetRand(UINT8_MAX) | OutputMessage::STANDARD_FIELDS_FEATURE_BIT;
 
-        Output standard_output(
+        mw::Output standard_output(
             Commitment{},
             PublicKey{},
             PublicKey{},
@@ -29,9 +31,9 @@ static std::vector<Output> CreateStandardOutputs(const size_t num_outputs)
     return outputs;
 }
 
-static Kernel CreateKernel(const bool with_stealth, const std::vector<PegOutCoin>& pegouts = {})
+static mw::Kernel CreateKernel(const bool with_stealth, const std::vector<PegOutCoin>& pegouts = {})
 {
-    return Kernel(
+    return mw::Kernel(
         0,
         std::nullopt,
         std::nullopt,
@@ -44,9 +46,9 @@ static Kernel CreateKernel(const bool with_stealth, const std::vector<PegOutCoin
     );
 }
 
-static std::vector<Kernel> CreateKernels(const size_t plain_kernels, const size_t stealth_kernels)
+static std::vector<mw::Kernel> CreateKernels(const size_t plain_kernels, const size_t stealth_kernels)
 {
-    std::vector<Kernel> kernels;
+    std::vector<mw::Kernel> kernels;
     for (size_t i = 0; i < plain_kernels; i++) {
         kernels.push_back(CreateKernel(false));
     }
@@ -72,10 +74,10 @@ BOOST_AUTO_TEST_CASE(ExceedsMaximum)
     // 10,000 outputs + 10,000 plain kernels = 200,000 Weight
     {
         std::vector<Input> inputs(mw::MAX_NUM_INPUTS);
-        std::vector<Output> outputs = CreateStandardOutputs(10'000);
-        std::vector<Kernel> kernels = CreateKernels(10'000, 0);
+        std::vector<mw::Output> outputs = CreateStandardOutputs(10'000);
+        std::vector<mw::Kernel> kernels = CreateKernels(10'000, 0);
 
-        TxBody tx(inputs, outputs, kernels);
+        mw::TxBody tx(inputs, outputs, kernels);
 
         BOOST_CHECK(Weight::Calculate(tx) == 200'000);
         BOOST_CHECK(!Weight::ExceedsMaximum(tx));
@@ -84,11 +86,11 @@ BOOST_AUTO_TEST_CASE(ExceedsMaximum)
     // 50,000 inputs max, so 50,001 should exceed maximum
     {
         std::vector<Input> inputs(mw::MAX_NUM_INPUTS + 1);
-        std::vector<Output> outputs = CreateStandardOutputs(10'000);
-        std::vector<Kernel> kernels = CreateKernels(10'000, 0);
+        std::vector<mw::Output> outputs = CreateStandardOutputs(10'000);
+        std::vector<mw::Kernel> kernels = CreateKernels(10'000, 0);
         BOOST_CHECK(inputs.size() == 50'001);
 
-        TxBody tx(inputs, outputs, kernels);
+        mw::TxBody tx(inputs, outputs, kernels);
 
         BOOST_CHECK(Weight::Calculate(tx) == 200'000);
         BOOST_CHECK(Weight::ExceedsMaximum(tx));
@@ -97,11 +99,11 @@ BOOST_AUTO_TEST_CASE(ExceedsMaximum)
     // 10,000 outputs + 10,000 plain kernels and 1 stealth kernel = 200,003 Weight
     {
         std::vector<Input> inputs(mw::MAX_NUM_INPUTS);
-        std::vector<Output> outputs = CreateStandardOutputs(10'000);
-        std::vector<Kernel> kernels = CreateKernels(10'000, 1);
+        std::vector<mw::Output> outputs = CreateStandardOutputs(10'000);
+        std::vector<mw::Kernel> kernels = CreateKernels(10'000, 1);
         BOOST_CHECK(inputs.size() == 50'000);
 
-        TxBody tx(inputs, outputs, kernels);
+        mw::TxBody tx(inputs, outputs, kernels);
 
         BOOST_CHECK(Weight::Calculate(tx) == 200'003);
         BOOST_CHECK(Weight::ExceedsMaximum(tx));

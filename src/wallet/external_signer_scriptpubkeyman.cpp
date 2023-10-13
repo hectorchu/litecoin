@@ -69,11 +69,7 @@ TransactionError ExternalSignerScriptPubKeyMan::FillPSBT(PartiallySignedTransact
     }
 
     // Already complete if every input is now signed
-    bool complete = true;
-    for (const auto& input : psbt.inputs) {
-        // TODO: for multisig wallets, we should only care if all _our_ inputs are signed
-        complete &= PSBTInputSigned(input);
-    }
+    bool complete = psbt.IsComplete();
     if (complete) return TransactionError::OK;
 
     std::string strFailReason;

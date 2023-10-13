@@ -20,7 +20,7 @@ public:
     static Tx CreatePegOut(const TxOutput& input, const CAmount fee = 0);
 
     const mw::Transaction::CPtr& GetTransaction() const noexcept { return m_pTransaction; }
-    const std::vector<Kernel>& GetKernels() const noexcept { return m_pTransaction->GetKernels(); }
+    const std::vector<mw::Kernel>& GetKernels() const noexcept { return m_pTransaction->GetKernels(); }
     const std::vector<TxOutput>& GetOutputs() const noexcept { return m_outputs; }
 
     const BlindingFactor& GetKernelOffset() const noexcept { return m_pTransaction->GetKernelOffset(); }

@@ -40,7 +40,7 @@ public:
     virtual bool IsCache() const noexcept = 0;
 
     // Virtual functions
-    virtual UTXO::CPtr GetUTXO(const mw::Hash& output_id) const = 0;
+    virtual mw::UTXO::CPtr GetUTXO(const mw::Hash& output_id) const = 0;
     virtual void WriteBatch(
         const mw::DBBatch::UPtr& pBatch,
         const CoinsViewUpdates& updates,
@@ -85,7 +85,7 @@ public:
 
     bool IsCache() const noexcept final { return true; }
 
-    UTXO::CPtr GetUTXO(const mw::Hash& output_id) const noexcept final;
+    mw::UTXO::CPtr GetUTXO(const mw::Hash& output_id) const noexcept final;
 
     /// <summary>
     /// Validates and connects the block to the end of the chain.
@@ -127,8 +127,8 @@ public:
     IMMR::Ptr GetOutputPMMR() const noexcept final { return m_pOutputPMMR; }
 
 private:
-    void AddUTXO(const uint64_t header_height, const Output& output);
-    UTXO SpendUTXO(const mw::Hash& output_id);
+    void AddUTXO(const uint64_t header_height, const mw::Output& output);
+    mw::UTXO SpendUTXO(const mw::Hash& output_id);
 
     ICoinsView::Ptr m_pBase;
 
@@ -151,7 +151,7 @@ public:
 
     bool IsCache() const noexcept final { return false; }
 
-    UTXO::CPtr GetUTXO(const mw::Hash& output_id) const final;
+    mw::UTXO::CPtr GetUTXO(const mw::Hash& output_id) const final;
     void WriteBatch(
         const mw::DBBatch::UPtr& pBatch,
         const CoinsViewUpdates& updates,
@@ -174,10 +174,10 @@ private:
         m_pLeafSet(pLeafSet),
         m_pOutputPMMR(pOutputPMMR) { }
 
-    void AddUTXO(CoinDB& coinDB, const Output& output);
-    void AddUTXO(CoinDB& coinDB, const UTXO::CPtr& pUTXO);
+    void AddUTXO(CoinDB& coinDB, const mw::Output& output);
+    void AddUTXO(CoinDB& coinDB, const mw::UTXO::CPtr& pUTXO);
     void SpendUTXO(CoinDB& coinDB, const mw::Hash& output_id);
-    UTXO::CPtr GetUTXO(const CoinDB& coinDB, const mw::Hash& output_id) const;
+    mw::UTXO::CPtr GetUTXO(const CoinDB& coinDB, const mw::Hash& output_id) const;
 
     LeafSet::Ptr m_pLeafSet;
     PMMR::Ptr m_pOutputPMMR;

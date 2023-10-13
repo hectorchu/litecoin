@@ -5,10 +5,12 @@
 #ifndef BITCOIN_NODE_COIN_H
 #define BITCOIN_NODE_COIN_H
 
+#include <primitives/transaction.h>
 #include <map>
 
 class COutPoint;
 class Coin;
+class GenericCoin;
 
 namespace node {
 struct NodeContext;
@@ -21,7 +23,7 @@ struct NodeContext;
  * @param[in] node The node context to use for lookup
  * @param[in,out] coins map to fill
  */
-void FindCoins(const node::NodeContext& node, std::map<COutPoint, Coin>& coins);
+void FindCoins(const node::NodeContext& node, std::map<GenericOutputID, GenericCoin>& coins);
 } // namespace node
 
 #endif // BITCOIN_NODE_COIN_H

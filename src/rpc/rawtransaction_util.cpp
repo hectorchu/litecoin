@@ -157,7 +157,7 @@ static void TxInErrorToJSON(const CTxIn& txin, UniValue& vErrorsRet, const std::
     vErrorsRet.push_back(entry);
 }
 
-void ParsePrevouts(const UniValue& prevTxsUnival, FillableSigningProvider* keystore, std::map<COutPoint, Coin>& coins)
+void ParsePrevouts(const UniValue& prevTxsUnival, FillableSigningProvider* keystore, std::map<GenericOutputID, GenericCoin>& coins)
 {
     if (!prevTxsUnival.isNull()) {
         const UniValue& prevTxs = prevTxsUnival.get_array();
@@ -189,9 +189,9 @@ void ParsePrevouts(const UniValue& prevTxsUnival, FillableSigningProvider* keyst
 
             {
                 auto coin = coins.find(out);
-                if (coin != coins.end() && !coin->second.IsSpent() && coin->second.out.scriptPubKey != scriptPubKey) {
+                if (coin != coins.end() && !coin->second.IsSpent() && coin->second.ToLTC().out.scriptPubKey != scriptPubKey) {
                     std::string err("Previous output scriptPubKey mismatch:\n");
-                    err = err + ScriptToAsmStr(coin->second.out.scriptPubKey) + "\nvs:\n"+
+                    err = err + ScriptToAsmStr(coin->second.ToLTC().out.scriptPubKey) + "\nvs:\n" +
                         ScriptToAsmStr(scriptPubKey);
                     throw JSONRPCError(RPC_DESERIALIZATION_ERROR, err);
                 }
@@ -202,7 +202,7 @@ void ParsePrevouts(const UniValue& prevTxsUnival, FillableSigningProvider* keyst
                     newcoin.out.nValue = AmountFromValue(find_value(prevOut, "amount"));
                 }
                 newcoin.nHeight = 1;
-                coins[out] = std::move(newcoin);
+                coins[out] = GenericCoin(out, std::move(newcoin));
             }
 
             // if redeemScript and private keys were given, add redeemScript to the keystore so it can be signed
@@ -278,7 +278,7 @@ void ParsePrevouts(const UniValue& prevTxsUnival, FillableSigningProvider* keyst
     }
 }
 
-void SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, const std::map<COutPoint, Coin>& coins, const UniValue& hashType, UniValue& result)
+void SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, const std::map<GenericOutputID, GenericCoin>& coins, const UniValue& hashType, UniValue& result)
 {
     int nHashType = ParseSighashString(hashType);
 
@@ -289,14 +289,15 @@ void SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, 
     SignTransactionResultToJSON(mtx, complete, coins, input_errors, result);
 }
 
-void SignTransactionResultToJSON(CMutableTransaction& mtx, bool complete, const std::map<COutPoint, Coin>& coins, const std::map<int, bilingual_str>& input_errors, UniValue& result)
+// MW: TODO - input_errors should be keyed by GenericOutputID
+void SignTransactionResultToJSON(CMutableTransaction& mtx, bool complete, const std::map<GenericOutputID, GenericCoin>& coins, const std::map<int, bilingual_str>& input_errors, UniValue& result)
 {
     // Make errors UniValue
     UniValue vErrors(UniValue::VARR);
     for (const auto& err_pair : input_errors) {
         if (err_pair.second.original == "Missing amount") {
             // This particular error needs to be an exception for some reason
-            throw JSONRPCError(RPC_TYPE_ERROR, strprintf("Missing amount for %s", coins.at(mtx.vin.at(err_pair.first).prevout).out.ToString()));
+            throw JSONRPCError(RPC_TYPE_ERROR, strprintf("Missing amount for %s", coins.at(mtx.vin.at(err_pair.first).prevout).ToLTC().out.ToString()));
         }
         TxInErrorToJSON(mtx.vin.at(err_pair.first), vErrors, err_pair.second.original);
     }

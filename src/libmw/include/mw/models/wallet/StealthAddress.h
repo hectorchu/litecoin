@@ -25,6 +25,11 @@ public:
         return m_spend < rhs.m_spend;
     }
 
+    bool operator<=(const StealthAddress& rhs) const noexcept
+    {
+        return *this == rhs || *this < rhs;
+    }
+
     static StealthAddress Random()
     {
         return StealthAddress(Keys::Random().PubKey(), Keys::Random().PubKey());

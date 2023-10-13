@@ -6,10 +6,12 @@
 #include <unordered_set>
 #include <numeric>
 
+MW_NAMESPACE
+
 std::vector<PegInCoin> TxBody::GetPegIns() const noexcept
 {
     std::vector<PegInCoin> pegins;
-    for (const Kernel& kernel : m_kernels) {
+    for (const mw::Kernel& kernel : m_kernels) {
         if (kernel.HasPegIn()) {
             pegins.push_back(PegInCoin(kernel.GetPegIn(), kernel.GetKernelID()));
         }
@@ -29,7 +31,7 @@ CAmount TxBody::GetPegInAmount() const noexcept
 std::vector<PegOutCoin> TxBody::GetPegOuts() const noexcept
 {
     std::vector<PegOutCoin> pegouts;
-    for (const Kernel& kernel : m_kernels) {
+    for (const mw::Kernel& kernel : m_kernels) {
         for (PegOutCoin pegout : kernel.GetPegOuts()) {
             pegouts.push_back(std::move(pegout));
         }
@@ -103,7 +105,7 @@ void TxBody::Validate() const
     std::vector<SignedMessage> signatures;
     std::transform(
         m_kernels.cbegin(), m_kernels.cend(), std::back_inserter(signatures),
-        [](const Kernel& kernel) { return kernel.BuildSignedMsg(); }
+        [](const mw::Kernel& kernel) { return kernel.BuildSignedMsg(); }
     );
 
     std::transform(
@@ -113,7 +115,7 @@ void TxBody::Validate() const
 
     std::transform(
         m_outputs.cbegin(), m_outputs.cend(), std::back_inserter(signatures),
-        [](const Output& output) { return output.BuildSignedMsg(); }
+        [](const mw::Output& output) { return output.BuildSignedMsg(); }
     );
 
     if (!Schnorr::BatchVerify(signatures)) {
@@ -126,9 +128,11 @@ void TxBody::Validate() const
     std::vector<ProofData> rangeProofs;
     std::transform(
         m_outputs.cbegin(), m_outputs.cend(), std::back_inserter(rangeProofs),
-        [](const Output& output) { return output.BuildProofData(); }
+        [](const mw::Output& output) { return output.BuildProofData(); }
     );
     if (!Bulletproofs::BatchVerify(rangeProofs)) {
         ThrowValidation(EConsensusError::BULLETPROOF);
     }
 }
+
+END_NAMESPACE

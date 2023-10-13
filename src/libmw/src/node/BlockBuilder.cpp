@@ -73,7 +73,7 @@ bool BlockBuilder::AddTransaction(const Transaction::CPtr& pTransaction, const s
     }
 
     // Make sure no duplicate outputs already on chain.
-    for (const Output& output : pTransaction->GetOutputs()) {
+    for (const mw::Output& output : pTransaction->GetOutputs()) {
         if (m_pCoinsView->HasCoin(output.GetOutputID())) {
             LOG_ERROR_F("Output {} already on chain", output.GetOutputID());
             return false;
@@ -88,7 +88,7 @@ bool BlockBuilder::AddTransaction(const Transaction::CPtr& pTransaction, const s
     m_stagedTxs.push_back(pTransaction);
     m_weight += weight;
 
-    for (const Output& output : pTransaction->GetOutputs()) {
+    for (const mw::Output& output : pTransaction->GetOutputs()) {
         auto inserted = m_stagedOutputs.insert(output.GetOutputID());
         assert(inserted.second);
     }

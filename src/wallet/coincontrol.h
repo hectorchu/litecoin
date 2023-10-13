@@ -60,6 +60,10 @@ public:
     int m_max_depth = DEFAULT_MAX_DEPTH;
     //! SigningProvider that has pubkeys and scripts to do spend size estimation for external inputs
     FlatSigningProvider m_external_provider;
+	//! Peg-in from LTC address to own MWEB address
+	bool fPegIn = false;
+	//! Peg-out from MWEB address to own LTC address
+	bool fPegOut = false;
 
     CCoinControl();
 
@@ -68,40 +72,40 @@ public:
         return (setSelected.size() > 0);
     }
 
-    bool IsSelected(const COutPoint& output) const
+    bool IsSelected(const GenericOutputID& output_idx) const
     {
-        return (setSelected.count(output) > 0);
+        return (setSelected.count(output_idx) > 0);
     }
 
-    bool IsExternalSelected(const COutPoint& output) const
+    bool IsExternalSelected(const GenericOutputID& output_idx) const
     {
-        return (m_external_txouts.count(output) > 0);
+        return (m_external_outputs.count(output_idx) > 0);
     }
 
-    bool GetExternalOutput(const COutPoint& outpoint, CTxOut& txout) const
+    bool GetExternalOutput(const GenericOutputID& output_idx, GenericOutput& output) const
     {
-        const auto ext_it = m_external_txouts.find(outpoint);
-        if (ext_it == m_external_txouts.end()) {
+        const auto ext_it = m_external_outputs.find(output_idx);
+        if (ext_it == m_external_outputs.end()) {
             return false;
         }
-        txout = ext_it->second;
+        output = ext_it->second;
         return true;
     }
 
-    void Select(const COutPoint& output)
+    void Select(const GenericOutputID& output_idx)
     {
-        setSelected.insert(output);
+        setSelected.insert(output_idx);
     }
 
-    void SelectExternal(const COutPoint& outpoint, const CTxOut& txout)
+    void SelectExternal(const GenericOutputID& output_idx, const GenericOutput& output)
     {
-        setSelected.insert(outpoint);
-        m_external_txouts.emplace(outpoint, txout);
+        setSelected.insert(output_idx);
+        m_external_outputs.emplace(output_idx, output);
     }
 
-    void UnSelect(const COutPoint& output)
+    void UnSelect(const GenericOutputID& output_idx)
     {
-        setSelected.erase(output);
+        setSelected.erase(output_idx);
     }
 
     void UnSelectAll()
@@ -109,33 +113,33 @@ public:
         setSelected.clear();
     }
 
-    void ListSelected(std::vector<COutPoint>& vOutpoints) const
+    void ListSelected(std::vector<GenericOutputID>& vOutpoints) const
     {
         vOutpoints.assign(setSelected.begin(), setSelected.end());
     }
 
-    void SetInputWeight(const COutPoint& outpoint, int64_t weight)
+    void SetInputWeight(const GenericOutputID& output_idx, int64_t weight)
     {
-        m_input_weights[outpoint] = weight;
+        m_input_weights[output_idx] = weight;
     }
 
-    bool HasInputWeight(const COutPoint& outpoint) const
+    bool HasInputWeight(const GenericOutputID& output_idx) const
     {
-        return m_input_weights.count(outpoint) > 0;
+        return m_input_weights.count(output_idx) > 0;
     }
 
-    int64_t GetInputWeight(const COutPoint& outpoint) const
+    int64_t GetInputWeight(const GenericOutputID& output_idx) const
     {
-        auto it = m_input_weights.find(outpoint);
+        auto it = m_input_weights.find(output_idx);
         assert(it != m_input_weights.end());
         return it->second;
     }
 
 private:
-    std::set<COutPoint> setSelected;
-    std::map<COutPoint, CTxOut> m_external_txouts;
-    //! Map of COutPoints to the maximum weight for that input
-    std::map<COutPoint, int64_t> m_input_weights;
+    std::set<GenericOutputID> setSelected;
+    std::map<GenericOutputID, GenericOutput> m_external_outputs;
+    //! Map of GenericOutputID's to the maximum weight for that input
+    std::map<GenericOutputID, int64_t> m_input_weights;
 };
 } // namespace wallet
 

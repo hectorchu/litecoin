@@ -21,7 +21,7 @@ BOOST_AUTO_TEST_CASE(Block)
     });
 
     MemMMR kernel_mmr;
-    for (const Kernel& kernel : pTransaction->GetKernels()) {
+    for (const mw::Kernel& kernel : pTransaction->GetKernels()) {
         kernel_mmr.Add(kernel);
     }
 

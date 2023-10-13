@@ -7,6 +7,8 @@
 #include <mw/models/wallet/Coin.h>
 #include <mw/models/wallet/Recipient.h>
 
+MW_NAMESPACE
+
 class TxBuilder
 {
     struct Inputs
@@ -20,7 +22,7 @@ class TxBuilder
     {
         BlindingFactor total_blind;
         SecretKey total_key;
-        std::vector<Output> outputs;
+        std::vector<mw::Output> outputs;
         std::vector<mw::Coin> coins;
     };
 
@@ -39,3 +41,5 @@ private:
     static Outputs CreateOutputs(const std::vector<mw::Recipient>& recipients);
     static CAmount TotalAmount(const std::vector<mw::Coin>& coins);
 };
+
+END_NAMESPACE

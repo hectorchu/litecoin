@@ -15,7 +15,7 @@ SecretKeys SecretKeys::From(const SecretKey& secret_key)
 
 SecretKeys& SecretKeys::Add(const SecretKey& secret_key)
 {
-    const int tweak_result = secp256k1_ec_privkey_tweak_add(
+    const int tweak_result = secp256k1_ec_seckey_tweak_add(
         SECKEY_CONTEXT.Read()->Get(),
         m_key.data(),
         secret_key.data()
@@ -29,7 +29,7 @@ SecretKeys& SecretKeys::Add(const SecretKey& secret_key)
 
 SecretKeys& SecretKeys::Mul(const SecretKey& secret_key)
 {
-    const int tweak_result = secp256k1_ec_privkey_tweak_mul(
+    const int tweak_result = secp256k1_ec_seckey_tweak_mul(
         SECKEY_CONTEXT.Read()->Get(),
         m_key.data(),
         secret_key.data()

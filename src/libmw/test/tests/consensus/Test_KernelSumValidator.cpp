@@ -44,7 +44,7 @@ BOOST_AUTO_TEST_CASE(ValidateState)
         standard_tx.GetOutputs()[0].GetCommitment(),
         pegout_tx.GetOutputs()[0].GetCommitment()
     };
-    std::vector<Kernel> kernels{
+    std::vector<mw::Kernel> kernels{
         pegin_tx.GetKernels().front(),
         standard_tx.GetKernels().front(),
         pegout_tx.GetKernels().front()
@@ -59,7 +59,7 @@ BOOST_AUTO_TEST_CASE(ValidateState)
     KernelSumValidator::ValidateState(utxo_commitments, kernels, total_offset);
 
     // Move pegout kernel before pegin kernel in list to make supply negative in the past
-    kernels = std::vector<Kernel>{
+    kernels = std::vector<mw::Kernel>{
         pegout_tx.GetKernels().front(),
         pegin_tx.GetKernels().front(),
         standard_tx.GetKernels().front()
@@ -109,8 +109,8 @@ BOOST_AUTO_TEST_CASE(ValidateForBlock)
 BOOST_AUTO_TEST_CASE(ValidateForBlockWithoutBuilder)
 {
     std::vector<Input> inputs;
-    std::vector<Output> outputs;
-    std::vector<Kernel> kernels;
+    std::vector<mw::Output> outputs;
+    std::vector<mw::Kernel> kernels;
 
     // Add inputs
     BlindingFactor input1_bf = BlindingFactor::Random();
@@ -158,7 +158,7 @@ BOOST_AUTO_TEST_CASE(ValidateForBlockWithoutBuilder)
 
     // Add kernel
     const CAmount fee = 500'000;
-    kernels.push_back(Kernel::Create(excess, std::nullopt, fee, std::nullopt, std::vector<PegOutCoin>{}, std::nullopt));
+    kernels.push_back(mw::Kernel::Create(excess, std::nullopt, fee, std::nullopt, std::vector<PegOutCoin>{}, std::nullopt));
 
     // Create Transaction
     auto pTransaction = mw::Transaction::Create(

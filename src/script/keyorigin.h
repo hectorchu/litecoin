@@ -6,12 +6,14 @@
 #define BITCOIN_SCRIPT_KEYORIGIN_H
 
 #include <serialize.h>
+#include <optional>
 #include <vector>
 
 struct KeyOriginInfo
 {
     unsigned char fingerprint[4]; //!< First 32 bits of the Hash160 of the public key at the root of the path
     std::vector<uint32_t> path;
+    std::optional<uint32_t> mweb_index{std::nullopt};
 
     friend bool operator==(const KeyOriginInfo& a, const KeyOriginInfo& b)
     {
@@ -34,15 +36,21 @@ struct KeyOriginInfo
             return false;
         }
         // Paths same length, compare them lexicographically
-        return a.path < b.path;
-    }
+        if (a.path < b.path) {
+            return true;
+        } else if (a.path > b.path) {
+            return false;
+        }
 
-    SERIALIZE_METHODS(KeyOriginInfo, obj) { READWRITE(obj.fingerprint, obj.path); }
+        // Compare the MWEB indices
+        return a.mweb_index < b.mweb_index;
+    }
 
     void clear()
     {
         memset(fingerprint, 0, 4);
         path.clear();
+        mweb_index.reset();
     }
 };
 

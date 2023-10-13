@@ -13,11 +13,15 @@
 #include <optional>
 #include <numeric>
 
+MW_NAMESPACE
+
 class Kernel :
     public Traits::ICommitted,
     public Traits::IHashable,
     public Traits::ISerializable
 {
+    friend class MutableKernel;
+
 public:
     Kernel() = default;
     Kernel(
@@ -216,10 +220,12 @@ private:
     mw::Hash m_hash;
 };
 
+END_NAMESPACE
+
 // Sorts by net supply increase [pegin - (fee + pegout)] with highest increase first, then sorts by hash.
 static const struct
 {
-    bool operator()(const Kernel& a, const Kernel& b) const
+    bool operator()(const mw::Kernel& a, const mw::Kernel& b) const
     {
         CAmount a_pegin = a.GetSupplyChange();
         CAmount b_pegin = b.GetSupplyChange();

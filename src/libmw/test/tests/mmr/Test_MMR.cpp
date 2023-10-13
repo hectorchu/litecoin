@@ -14,7 +14,7 @@ BOOST_AUTO_TEST_CASE(MMRTest)
 {
     auto pmmr = PMMR::Open(
         'O',
-        GetDataDir() / "mmr",
+        m_path_root / "mmr",
         0,
         GetDB(),
         nullptr
@@ -56,7 +56,7 @@ BOOST_AUTO_TEST_CASE(PMMRCacheTest)
 {
     PMMR::Ptr pmmr = PMMR::Open(
         'O',
-        GetDataDir() / "mmr",
+        m_path_root / "mmr",
         0,
         GetDB(),
         nullptr

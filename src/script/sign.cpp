@@ -6,6 +6,7 @@
 #include <script/sign.h>
 
 #include <consensus/amount.h>
+#include <mw/wallet/sign.h>
 #include <key.h>
 #include <policy/policy.h>
 #include <primitives/transaction.h>
@@ -296,6 +297,8 @@ static bool SignStep(const SigningProvider& provider, const BaseSignatureCreator
     case TxoutType::NONSTANDARD:
     case TxoutType::NULL_DATA:
     case TxoutType::WITNESS_UNKNOWN:
+    case TxoutType::WITNESS_MWEB_PEGIN:
+    case TxoutType::WITNESS_MWEB_HOGADDR:
         return false;
     case TxoutType::PUBKEY:
         if (!CreateSig(creator, sigdata, provider, sig, CPubKey(vSolutions[0]), scriptPubKey, sigversion)) return false;
@@ -653,7 +656,7 @@ bool IsSegWitOutput(const SigningProvider& provider, const CScript& script)
     return false;
 }
 
-bool SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, const std::map<COutPoint, Coin>& coins, int nHashType, std::map<int, bilingual_str>& input_errors)
+bool SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, const std::map<GenericOutputID, GenericCoin>& coins, int nHashType, std::map<int, bilingual_str>& input_errors)
 {
     bool fHashSingle = ((nHashType & ~SIGHASH_ANYONECANPAY) == SIGHASH_SINGLE);
 
@@ -663,14 +666,13 @@ bool SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, 
 
     PrecomputedTransactionData txdata;
     std::vector<CTxOut> spent_outputs;
-    for (unsigned int i = 0; i < mtx.vin.size(); ++i) {
-        CTxIn& txin = mtx.vin[i];
+    for (const CTxIn& txin : mtx.vin) {
         auto coin = coins.find(txin.prevout);
         if (coin == coins.end() || coin->second.IsSpent()) {
             txdata.Init(txConst, /*spent_outputs=*/{}, /*force=*/true);
             break;
         } else {
-            spent_outputs.emplace_back(coin->second.out.nValue, coin->second.out.scriptPubKey);
+            spent_outputs.emplace_back(coin->second.ToLTC().out);
         }
     }
     if (spent_outputs.size() == mtx.vin.size()) {
@@ -685,10 +687,10 @@ bool SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, 
             input_errors[i] = _("Input not found or already spent");
             continue;
         }
-        const CScript& prevPubKey = coin->second.out.scriptPubKey;
-        const CAmount& amount = coin->second.out.nValue;
+        const CScript& prevPubKey = coin->second.ToLTC().out.scriptPubKey;
+        const CAmount& amount = coin->second.ToLTC().out.nValue;
 
-        SignatureData sigdata = DataFromTransaction(mtx, i, coin->second.out);
+        SignatureData sigdata = DataFromTransaction(mtx, i, coin->second.ToLTC().out);
         // Only sign SIGHASH_SINGLE if there's a corresponding output:
         if (!fHashSingle || (i < mtx.vout.size())) {
             ProduceSignature(*keystore, MutableTransactionSignatureCreator(mtx, i, amount, &txdata, nHashType), prevPubKey, sigdata);

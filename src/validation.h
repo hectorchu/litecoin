@@ -151,6 +151,8 @@ struct MempoolAcceptResult {
     const std::optional<std::list<CTransactionRef>> m_replaced_transactions;
     /** Virtual size as used by the mempool, calculated using serialized size and sigops. */
     const std::optional<int64_t> m_vsize;
+    // MWEB: MWEB Weight
+    const std::optional<int64_t> m_mweb_weight;
     /** Raw base fees in satoshis. */
     const std::optional<CAmount> m_base_fees;
 
@@ -162,12 +164,12 @@ struct MempoolAcceptResult {
         return MempoolAcceptResult(state);
     }
 
-    static MempoolAcceptResult Success(std::list<CTransactionRef>&& replaced_txns, int64_t vsize, CAmount fees) {
-        return MempoolAcceptResult(std::move(replaced_txns), vsize, fees);
+    static MempoolAcceptResult Success(std::list<CTransactionRef>&& replaced_txns, int64_t vsize, int64_t mweb_weight, CAmount fees) {
+        return MempoolAcceptResult(std::move(replaced_txns), vsize, mweb_weight, fees);
     }
 
-    static MempoolAcceptResult MempoolTx(int64_t vsize, CAmount fees) {
-        return MempoolAcceptResult(vsize, fees);
+    static MempoolAcceptResult MempoolTx(int64_t vsize, int64_t mweb_weight, CAmount fees) {
+        return MempoolAcceptResult(vsize, mweb_weight, fees);
     }
 
     static MempoolAcceptResult MempoolTxDifferentWitness(const uint256& other_wtxid) {
@@ -183,13 +185,13 @@ private:
         }
 
     /** Constructor for success case */
-    explicit MempoolAcceptResult(std::list<CTransactionRef>&& replaced_txns, int64_t vsize, CAmount fees)
+    explicit MempoolAcceptResult(std::list<CTransactionRef>&& replaced_txns, int64_t vsize, int64_t mweb_weight, CAmount fees)
         : m_result_type(ResultType::VALID),
-        m_replaced_transactions(std::move(replaced_txns)), m_vsize{vsize}, m_base_fees(fees) {}
+        m_replaced_transactions(std::move(replaced_txns)), m_vsize{vsize}, m_mweb_weight{mweb_weight}, m_base_fees(fees) {}
 
     /** Constructor for already-in-mempool case. It wouldn't replace any transactions. */
-    explicit MempoolAcceptResult(int64_t vsize, CAmount fees)
-        : m_result_type(ResultType::MEMPOOL_ENTRY), m_vsize{vsize}, m_base_fees(fees) {}
+    explicit MempoolAcceptResult(int64_t vsize, int64_t mweb_weight, CAmount fees)
+        : m_result_type(ResultType::MEMPOOL_ENTRY), m_vsize{vsize}, m_mweb_weight{mweb_weight}, m_base_fees(fees) {}
 
     /** Constructor for witness-swapped case. */
     explicit MempoolAcceptResult(const uint256& other_wtxid)
@@ -511,7 +513,7 @@ public:
     bool CanFlushToDisk() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
     {
         AssertLockHeld(::cs_main);
-        return m_coins_views && m_coins_views->m_cacheview;
+        return m_coins_views && m_coins_views->m_cacheview && m_coins_views->m_cacheview->GetMWEBCacheView();
     }
 
     //! The current chain of blockheaders we consult and build on.

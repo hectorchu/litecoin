@@ -155,46 +155,6 @@ public:
     std::string ToString() const;
 };
 
-typedef std::variant<COutPoint, mw::Hash> OutputIndex;
-
-/// <summary>
-/// A generic transaction input that could either be an MWEB input hash or a canonical CTxIn.
-/// </summary>
-class CTxInput
-{
-public:
-    CTxInput(mw::Hash output_id)
-        : m_input(std::move(output_id)) {}
-    CTxInput(CTxIn txin)
-        : m_input(std::move(txin)) {}
-
-    bool IsMWEB() const noexcept { return std::holds_alternative<mw::Hash>(m_input); }
-    OutputIndex GetIndex() const noexcept
-    {
-        return IsMWEB() ? OutputIndex{ToMWEB()} : OutputIndex{GetTxIn().prevout};
-    }
-
-    std::string ToString() const
-    {
-        return IsMWEB() ? ToMWEB().ToHex() : GetTxIn().ToString();
-    }
-
-    const mw::Hash& ToMWEB() const noexcept
-    {
-        assert(IsMWEB());
-        return std::get<mw::Hash>(m_input);
-    }
-
-    const CTxIn& GetTxIn() const noexcept
-    {
-        assert(!IsMWEB());
-        return std::get<CTxIn>(m_input);
-    }
-
-private:
-    std::variant<CTxIn, mw::Hash> m_input;
-};
-
 /** An output of a transaction.  It contains the public key that the next input
  * must be able to sign with to claim it.
  */
@@ -240,37 +200,131 @@ public:
 
 class CTransaction;
 
-/// <summary>
-/// A generic transaction output that could either be an MWEB output ID or a canonical CTxOut.
-/// </summary>
-class CTxOutput
+class GenericOutputID
 {
+    std::variant<COutPoint, mw::Hash> m_value;
+
 public:
-    CTxOutput() = default;
-    CTxOutput(mw::Hash output_id)
-        : m_idx(std::move(output_id)), m_txout(std::nullopt) {}
-    CTxOutput(OutputIndex idx, CTxOut txout)
-        : m_idx(std::move(idx)), m_txout(std::move(txout)) {}
+    GenericOutputID() = default;
+    GenericOutputID(COutPoint outpoint) : m_value(std::move(outpoint)) {}
+    GenericOutputID(mw::Hash hash) : m_value(std::move(hash)) {}
 
-    bool IsMWEB() const noexcept { return std::holds_alternative<mw::Hash>(m_idx); }
+    bool operator==(const GenericOutputID& id) const noexcept { return id.m_value == m_value; }
+    bool operator==(const COutPoint& outpoint) const noexcept { return IsOutPoint() && ToOutPoint() == outpoint; }
+    bool operator==(const mw::Hash& mweb_hash) const noexcept { return IsMWEB() && ToMWEB() == mweb_hash; }
+    bool operator<(const GenericOutputID& id) const noexcept { return m_value < id.m_value; }
 
-    const OutputIndex& GetIndex() const noexcept { return m_idx; }
+    bool IsOutPoint() const noexcept { return std::holds_alternative<COutPoint>(m_value); }
+    bool IsMWEB() const noexcept { return std::holds_alternative<mw::Hash>(m_value); }
 
-    std::string ToString() const
-    {
-        return IsMWEB() ? ToMWEB().ToHex() : GetTxOut().ToString();
-    }
-    
     const mw::Hash& ToMWEB() const noexcept
     {
         assert(IsMWEB());
-        return std::get<mw::Hash>(m_idx);
+        return std::get<mw::Hash>(m_value);
+    }
+
+    const COutPoint& ToOutPoint() const noexcept
+    {
+        assert(IsOutPoint());
+        return std::get<COutPoint>(m_value);
+    }
+
+    std::string ToString() const noexcept
+    {
+        if (IsMWEB()) {
+            return ToMWEB().ToHex();
+        } else {
+            const COutPoint& outpoint = ToOutPoint();
+            return outpoint.hash.ToString() + ":" + std::to_string(outpoint.n);
+        }
+    }
+};
+
+/// <summary>
+/// A transaction input that could either be an MWEB input hash or a canonical CTxIn.
+/// </summary>
+class GenericInput
+{
+public:
+    GenericInput() = default;
+    GenericInput(mw::Hash output_id)
+        : m_input(std::move(output_id)) {}
+    GenericInput(CTxIn txin)
+        : m_input(std::move(txin)) {}
+
+    bool IsMWEB() const noexcept { return std::holds_alternative<mw::Hash>(m_input); }
+
+    const mw::Hash& ToMWEB() const noexcept
+    {
+        assert(IsMWEB());
+        return std::get<mw::Hash>(m_input);
+    }
+
+    const CTxIn& GetTxIn() const noexcept
+    {
+        assert(!IsMWEB());
+        return std::get<CTxIn>(m_input);
+    }
+
+    GenericOutputID GetID() const noexcept
+    {
+        return IsMWEB() ? GenericOutputID{ToMWEB()} : GenericOutputID{GetTxIn().prevout};
+    }
+
+    std::string ToString() const
+    {
+        return IsMWEB() ? ToMWEB().ToHex() : strprintf("%s:%d", GetTxIn().prevout.hash.ToString(), GetTxIn().prevout.n);
+    }
+
+private:
+    std::variant<CTxIn, mw::Hash> m_input;
+};
+
+/// <summary>
+/// A transaction output that could either be an MWEB output ID or a canonical CTxOut.
+/// </summary>
+class GenericOutput
+{
+    std::variant<std::pair<COutPoint, CTxOut>, mw::Output> m_output;
+
+public:
+    GenericOutput() = default;
+    GenericOutput(mw::Output output)
+        : m_output(std::move(output)) {}
+    GenericOutput(COutPoint outpoint, CTxOut txout)
+        : m_output(std::make_pair(std::move(outpoint), std::move(txout))) {}
+
+    bool IsMWEB() const noexcept { return std::holds_alternative<mw::Output>(m_output); }
+
+    GenericOutputID GetID() const noexcept { return IsMWEB() ? GenericOutputID(ToMWEBOutputID()) : GenericOutputID(ToOutPoint()); }
+
+    std::string ToString() const
+    {
+        return IsMWEB() ? ToMWEBOutputID().ToHex() : GetTxOut().ToString();
+    }
+    
+    const mw::Hash& ToMWEBOutputID() const noexcept
+    {
+        assert(IsMWEB());
+        return std::get<mw::Output>(m_output).GetOutputID();
+    }
+
+    const mw::Output& ToMWEBOutput() const noexcept
+    {
+        assert(IsMWEB());
+        return std::get<mw::Output>(m_output);
+    }
+
+    const COutPoint& ToOutPoint() const noexcept
+    {
+        assert(!IsMWEB());
+        return std::get<std::pair<COutPoint, CTxOut>>(m_output).first;
     }
 
     const CTxOut& GetTxOut() const noexcept
     {
-        assert(!IsMWEB() && !!m_txout);
-        return *m_txout;
+        assert(!IsMWEB());
+        return std::get<std::pair<COutPoint, CTxOut>>(m_output).second;
     }
 
     const CScript& GetScriptPubKey() const noexcept
@@ -278,10 +332,6 @@ public:
         assert(!IsMWEB());
         return GetTxOut().scriptPubKey;
     }
-
-private:
-    OutputIndex m_idx;
-    std::optional<CTxOut> m_txout;
 };
 
 struct CMutableTransaction;
@@ -501,27 +551,34 @@ public:
     /// Builds a vector of CTxInputs, starting with the canoncial inputs (CTxIn), followed by the MWEB input hashes.
     /// </summary>
     /// <returns>A vector of all of the transaction's inputs.</returns>
-    std::vector<CTxInput> GetInputs() const noexcept;
+    std::vector<GenericInput> GetInputs() const noexcept;
 
     /// <summary>
-    /// Constructs a CTxOutput for the specified canonical output.
+    /// Checks for the existence of an output with the provided index.
+    /// </summary>
+    /// <param name="idx">The output index.</param>
+    /// <returns>True if a matching output belongs to this transaction. Otherwise, false.</returns>
+    bool HasOutput(const GenericOutputID& idx) const noexcept;
+
+    /// <summary>
+    /// Constructs a GenericOutput for the specified canonical output.
     /// </summary>
     /// <param name="index">The index of the CTxOut. This must be a valid index.</param>
-    /// <returns>The CTxOutput object.</returns>
-    CTxOutput GetOutput(const size_t index) const noexcept;
+    /// <returns>The GenericOutput object.</returns>
+    GenericOutput GetOutput(const size_t index) const noexcept;
 
     /// <summary>
-    /// Constructs a CTxOutput for the specified output.
+    /// Constructs a GenericOutput for the specified output.
     /// </summary>
     /// <param name="idx">The index of the output. This could either be an output ID or a valid canonical output index.</param>
-    /// <returns>The CTxOutput object.</returns>
-    CTxOutput GetOutput(const OutputIndex& idx) const noexcept;
+    /// <returns>The GenericOutput object.</returns>
+    GenericOutput GetOutput(const GenericOutputID& idx) const noexcept;
 
     /// <summary>
     /// Builds a vector of CTxOutputs, starting with the canoncial outputs (CTxOut), followed by the MWEB output IDs.
     /// </summary>
     /// <returns>A vector of all of the transaction's outputs.</returns>
-    std::vector<CTxOutput> GetOutputs() const noexcept;
+    std::vector<GenericOutput> GetOutputs() const noexcept;
 };
 
 /** A mutable version of CTransaction. */
@@ -531,7 +588,7 @@ struct CMutableTransaction
     std::vector<CTxOut> vout;
     int32_t nVersion;
     uint32_t nLockTime;
-    MWEB::Tx mweb_tx;
+    mw::MutableTx mweb_tx;
 
     /** Memory only. */
     bool m_hogEx = false;
@@ -570,11 +627,21 @@ struct CMutableTransaction
         return false;
     }
 
-    bool HasMWEBTx() const noexcept { return !mweb_tx.IsNull(); }
-    bool IsMWEBOnly() const noexcept { return HasMWEBTx() && vin.empty() && vout.empty(); }
+    /// <summary>
+    /// Builds a vector of GenericInputs, starting with the canoncial inputs (CTxIn), followed by the MWEB input hashes.
+    /// </summary>
+    /// <returns>A vector of all of the transaction's inputs.</returns>
+    std::vector<GenericInput> GetInputs() const noexcept;
+
+    ///// <summary>
+    ///// Builds a vector of GenericOutputs, starting with the canoncial outputs (CTxOut), followed by the MWEB outputs.
+    ///// </summary>
+    ///// <returns>A vector of all of the transaction's outputs.</returns>
+    //std::vector<GenericOutput> GetOutputs() const noexcept;
 };
 
 typedef std::shared_ptr<const CTransaction> CTransactionRef;
+static inline CTransactionRef MakeTransactionRef() { return std::make_shared<const CTransaction>(CMutableTransaction()); }
 template <typename Tx> static inline CTransactionRef MakeTransactionRef(Tx&& txIn) { return std::make_shared<const CTransaction>(std::forward<Tx>(txIn)); }
 
 template <typename Stream>

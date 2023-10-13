@@ -18,12 +18,12 @@ public:
     // Throws a ValidationException if the utxo sum != kernel sum.
     static void ValidateState(
         const std::vector<Commitment>& utxo_commitments,
-        const std::vector<Kernel>& kernels,
+        const std::vector<mw::Kernel>& kernels,
         const BlindingFactor& total_offset)
     {
         // Sum all utxo commitments - expected supply.
         int64_t total_mweb_supply = 0;
-        for (const Kernel& kernel : kernels) {
+        for (const mw::Kernel& kernel : kernels) {
             total_mweb_supply += kernel.GetSupplyChange();
 
             // Total supply can never go below 0
@@ -42,7 +42,7 @@ public:
     }
 
     static void ValidateForBlock(
-        const TxBody& body,
+        const mw::TxBody& body,
         const BlindingFactor& total_offset,
         const BlindingFactor& prev_total_offset)
     {

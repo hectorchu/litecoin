@@ -22,7 +22,7 @@ bool CheckPackage(const Package& txns, PackageValidationState& state)
     if (package_count > MAX_PACKAGE_COUNT) {
         return state.Invalid(PackageValidationResult::PCKG_POLICY, "package-too-many-transactions");
     }
-
+    
     const int64_t total_size = std::accumulate(txns.cbegin(), txns.cend(), 0,
                                [](int64_t sum, const auto& tx) { return sum + GetVirtualTransactionSize(*tx); });
     // If the package only contains 1 tx, it's better to report the policy violation on individual tx size.

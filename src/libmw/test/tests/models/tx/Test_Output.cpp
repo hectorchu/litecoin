@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(Create)
     uint64_t amount = 1'234'567;
     BlindingFactor blind;
     SecretKey sender_key = SecretKey::Random();
-    Output output = Output::Create(
+    mw::Output output = mw::Output::Create(
         &blind,
         sender_key,
         receiver_subaddr,

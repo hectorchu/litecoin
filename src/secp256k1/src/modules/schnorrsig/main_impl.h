@@ -197,7 +197,8 @@ int secp256k1_schnorrsig_sign32(const secp256k1_context* ctx, unsigned char *sig
     return secp256k1_schnorrsig_sign_internal(ctx, sig64, msg32, 32, keypair, secp256k1_nonce_function_bip340, (unsigned char*)aux_rand32);
 }
 
-int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, unsigned char *sig64, const unsigned char *msg32, const secp256k1_keypair *keypair, const unsigned char *aux_rand32) {
+int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, unsigned char* sig64, const unsigned char* msg32, const secp256k1_keypair* keypair, const unsigned char* aux_rand32)
+{
     return secp256k1_schnorrsig_sign32(ctx, sig64, msg32, keypair, aux_rand32);
 }
 
@@ -214,6 +215,102 @@ int secp256k1_schnorrsig_sign_custom(const secp256k1_context* ctx, unsigned char
         ndata = extraparams->ndata;
     }
     return secp256k1_schnorrsig_sign_internal(ctx, sig64, msg, msglen, keypair, noncefp, ndata);
+}
+
+/* This nonce function is described in BIP-schnorr
+ * (https://github.com/sipa/bips/blob/bip-schnorr/bip-schnorr.mediawiki) */
+static int secp256k1_nonce_function_bipschnorr(unsigned char* nonce32, const unsigned char* msg32, const unsigned char* key32, const unsigned char* algo16, void* data, unsigned int counter)
+{
+    secp256k1_sha256 sha;
+    (void)data;
+    (void)counter;
+    VERIFY_CHECK(counter == 0);
+
+    /* Hash x||msg as per the spec */
+    secp256k1_sha256_initialize(&sha);
+    secp256k1_sha256_write(&sha, key32, 32);
+    secp256k1_sha256_write(&sha, msg32, 32);
+    /* Hash in algorithm, which is not in the spec, but may be critical to
+	 * users depending on it to avoid nonce reuse across algorithms. */
+    if (algo16 != NULL) {
+        secp256k1_sha256_write(&sha, algo16, 16);
+    }
+    secp256k1_sha256_finalize(&sha, nonce32);
+    return 1;
+}
+
+int secp256k1_schnorrsig_sign_mweb(const secp256k1_context* ctx, unsigned char* sig, int* nonce_is_negated, const unsigned char* msg32, const unsigned char* seckey, secp256k1_nonce_function noncefp, void* ndata)
+{
+    secp256k1_scalar x;
+    secp256k1_scalar e;
+    secp256k1_scalar k;
+    secp256k1_gej pkj;
+    secp256k1_gej rj;
+    secp256k1_ge pk;
+    secp256k1_ge r;
+    secp256k1_sha256 sha;
+    int overflow;
+    unsigned char buf[33];
+    size_t buflen = sizeof(buf);
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_gen_context_is_built(&ctx->ecmult_gen_ctx));
+    ARG_CHECK(sig != NULL);
+    ARG_CHECK(msg32 != NULL);
+    ARG_CHECK(seckey != NULL);
+
+    if (noncefp == NULL) {
+        noncefp = secp256k1_nonce_function_bipschnorr;
+    }
+    secp256k1_scalar_set_b32(&x, seckey, &overflow);
+    /* Fail if the secret key is invalid. */
+    if (overflow || secp256k1_scalar_is_zero(&x)) {
+        memset(sig, 0, sizeof(*sig));
+        return 0;
+    }
+
+    secp256k1_ecmult_gen(&ctx->ecmult_gen_ctx, &pkj, &x);
+    secp256k1_ge_set_gej(&pk, &pkj);
+
+    if (!noncefp(buf, msg32, seckey, NULL, (void*)ndata, 0)) {
+        return 0;
+    }
+    secp256k1_scalar_set_b32(&k, buf, NULL);
+    if (secp256k1_scalar_is_zero(&k)) {
+        return 0;
+    }
+
+    secp256k1_ecmult_gen(&ctx->ecmult_gen_ctx, &rj, &k);
+    secp256k1_ge_set_gej(&r, &rj);
+
+    if (nonce_is_negated != NULL) {
+        *nonce_is_negated = 0;
+    }
+    if (!secp256k1_fe_is_quad_var(&r.y)) {
+        secp256k1_scalar_negate(&k, &k);
+        if (nonce_is_negated != NULL) {
+            *nonce_is_negated = 1;
+        }
+    }
+    secp256k1_fe_normalize(&r.x);
+    secp256k1_fe_get_b32(&sig[0], &r.x);
+
+    secp256k1_sha256_initialize(&sha);
+    secp256k1_sha256_write(&sha, &sig[0], 32);
+    secp256k1_eckey_pubkey_serialize(&pk, buf, &buflen, 1);
+    secp256k1_sha256_write(&sha, buf, buflen);
+    secp256k1_sha256_write(&sha, msg32, 32);
+    secp256k1_sha256_finalize(&sha, buf);
+
+    secp256k1_scalar_set_b32(&e, buf, NULL);
+    secp256k1_scalar_mul(&e, &e, &x);
+    secp256k1_scalar_add(&e, &e, &k);
+
+    secp256k1_scalar_get_b32(&sig[32], &e);
+    secp256k1_scalar_clear(&k);
+    secp256k1_scalar_clear(&x);
+
+    return 1;
 }
 
 int secp256k1_schnorrsig_verify(const secp256k1_context* ctx, const unsigned char *sig64, const unsigned char *msg, size_t msglen, const secp256k1_xonly_pubkey *pubkey) {
@@ -299,7 +396,7 @@ static int secp256k1_schnorrsig_verify_batch_ecmult_callback(secp256k1_scalar *s
     if (idx % 2 == 0) {
         secp256k1_fe rx;
         *sc = ecmult_context->randomizer_cache[(idx / 2) % 2];
-        if (!secp256k1_fe_set_b32(&rx, &ecmult_context->sig[idx / 2])) {
+        if (!secp256k1_fe_set_b32(&rx, &ecmult_context->sig[idx / 2][0])) {
             return 0;
         }
         if (!secp256k1_ge_set_xquad(pt, &rx)) {
@@ -311,7 +408,7 @@ static int secp256k1_schnorrsig_verify_batch_ecmult_callback(secp256k1_scalar *s
         size_t buflen = sizeof(buf);
         secp256k1_sha256 sha;
         secp256k1_sha256_initialize(&sha);
-        secp256k1_sha256_write(&sha, ecmult_context->sig[idx / 2], 32);
+        secp256k1_sha256_write(&sha, &ecmult_context->sig[idx / 2][0], 32);
         secp256k1_ec_pubkey_serialize(ecmult_context->ctx, buf, &buflen, ecmult_context->pk[idx / 2], SECP256K1_EC_COMPRESSED);
         secp256k1_sha256_write(&sha, buf, buflen);
         secp256k1_sha256_write(&sha, ecmult_context->msg32[idx / 2], 32);

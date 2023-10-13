@@ -7,7 +7,7 @@
 #include <memory>
 
 // Forward Declarations
-class LegacyScriptPubKeyMan;
+namespace wallet { class LegacyScriptPubKeyMan; }
 
 MW_NAMESPACE
 
@@ -16,7 +16,7 @@ class Keychain
 public:
     using Ptr = std::shared_ptr<Keychain>;
 
-    Keychain(const LegacyScriptPubKeyMan& spk_man, SecretKey scan_secret, SecretKey spend_secret)
+    Keychain(const wallet::LegacyScriptPubKeyMan& spk_man, SecretKey scan_secret, SecretKey spend_secret)
         : m_spk_man(spk_man),
         m_scanSecret(std::move(scan_secret)),
         m_spendSecret(std::move(spend_secret)) { }
@@ -26,7 +26,7 @@ public:
     // will not be able to calculate the coin's output key.
     // It will still calculate the shared_secret though, which can be
     // used to calculate the spend key when the wallet becomes unlocked.
-    bool RewindOutput(const Output& output, mw::Coin& coin) const;
+    bool RewindOutput(const mw::Output& output, mw::Coin& coin) const;
 
     // Calculates the output secret key for the given coin.
     // If the address index is known, it calculates from the keychain's master spend key.
@@ -53,7 +53,7 @@ public:
     void Unlock(const SecretKey& spend_secret) { m_spendSecret = spend_secret; }
     
 private:
-    const LegacyScriptPubKeyMan& m_spk_man;
+    const wallet::LegacyScriptPubKeyMan& m_spk_man;
     SecretKey m_scanSecret;
     SecretKey m_spendSecret;
 };

@@ -16,19 +16,15 @@ static constexpr size_t SCRATCH_SPACE_SIZE = 256 * MAX_WIDTH;
 Signature Schnorr::Sign(
     const uint8_t* secretKey,
     const mw::Hash& message)
-{
-    secp256k1_keypair keypair;
-    const int keypair_result = secp256k1_keypair_create(SCHNORR_CONTEXT.Read()->Get(), &keypair, secretKey);
-    if (keypair_result != 1) {
-        ThrowCrypto("Failed to create keypair.");
-    }
-    
+{    
     Signature signature;
-    const int signedResult = secp256k1_schnorrsig_sign(
+    const int signedResult = secp256k1_schnorrsig_sign_mweb(
         SCHNORR_CONTEXT.Write()->Randomized(),
         signature.data(),
+        nullptr,
         message.data(),
-        &keypair,
+        secretKey,
+        nullptr,
         nullptr
     );
     if (signedResult != 1) {
@@ -54,7 +50,7 @@ bool Schnorr::Verify(
     const mw::Hash& message)
 {
     SignedMessage signed_message(message, sumPubKeys, signature);
-    if (CACHE.Write()->Cached(signed_message)) {
+    if (CACHE.Read()->Cached(signed_message)) {
         return true;
     }
 
@@ -79,13 +75,24 @@ bool Schnorr::Verify(
 
 bool Schnorr::BatchVerify(const std::vector<SignedMessage>& signatures)
 {
+    //for (const SignedMessage& signed_message : signatures) {
+    //    if (CACHE.Read()->Cached(signed_message)) {
+    //        continue;
+    //    }
+
+    //    if (!Verify(signed_message.GetSignature(), signed_message.GetPublicKey(), signed_message.GetMsgHash())) {
+    //        return false;
+    //    }
+    //}
+
+    //return true;
     std::vector<SignedMessage> unverified_messages;
     std::vector<secp256k1_pubkey> parsedPubKeys;
     std::vector<const uint8_t*> signaturePtrs;
     std::vector<const uint8_t*> messageData;
 
     for (const SignedMessage& signed_message : signatures) {
-        if (CACHE.Write()->Cached(signed_message)) {
+        if (CACHE.Read()->Cached(signed_message)) {
             continue;
         }
 

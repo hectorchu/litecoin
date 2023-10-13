@@ -7,7 +7,7 @@
 #include <mw/common/Macros.h>
 #include <mw/common/Traits.h>
 #include <mw/models/crypto/BigInteger.h>
-#include <boost/functional/hash.hpp>
+#include <crypto/siphash.h>
 
 MW_NAMESPACE
 
@@ -22,7 +22,9 @@ namespace std
     {
         size_t operator()(const mw::Hash& hash) const
         {
-            return boost::hash_value(hash.vec());
+            CSipHasher hasher(0, 0);
+            hasher.Write(hash.data(), hash.size());
+            return static_cast<size_t>(hasher.Finalize());
         }
     };
 }

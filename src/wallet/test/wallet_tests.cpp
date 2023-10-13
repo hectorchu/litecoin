@@ -70,8 +70,10 @@ static CMutableTransaction TestSimpleSpend(const CTransaction& from, uint32_t in
     mtx.vin.push_back({CTxIn{from.GetHash(), index}});
     FillableSigningProvider keystore;
     keystore.AddKey(key);
-    std::map<COutPoint, Coin> coins;
-    coins[mtx.vin[0].prevout].out = from.vout[index];
+    std::map<GenericOutputID, GenericCoin> coins;
+    Coin coin;
+    coin.out = from.vout[index];
+    coins[mtx.vin[0].prevout] = GenericCoin{mtx.vin[0].prevout, coin};
     std::map<int, bilingual_str> input_errors;
     BOOST_CHECK(SignTransaction(mtx, &keystore, coins, SIGHASH_ALL, input_errors));
     return mtx;
@@ -359,7 +361,7 @@ BOOST_FIXTURE_TEST_CASE(coin_mark_dirty_immature_credit, TestChain100Setup)
 
     LOCK(wallet.cs_wallet);
     LOCK(Assert(m_node.chainman)->GetMutex());
-    CWalletTx wtx{m_coinbase_txns.back(), TxStateConfirmed{m_node.chainman->ActiveChain().Tip()->GetBlockHash(), m_node.chainman->ActiveChain().Height(), /*index=*/0}};
+    CWalletTx wtx{m_coinbase_txns.back(), TxStateConfirmed{m_node.chainman->ActiveChain().Tip()->GetBlockHash(), m_node.chainman->ActiveChain().Height(), /*index=*/0}, std::nullopt};
     wallet.SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
     wallet.SetupDescriptorScriptPubKeyMans();
 
@@ -393,7 +395,7 @@ static int64_t AddTx(ChainstateManager& chainman, CWallet& wallet, uint32_t lock
         block->phashBlock = &hash;
         state = TxStateConfirmed{hash, block->nHeight, /*index=*/0};
     }
-    return wallet.AddToWallet(MakeTransactionRef(tx), state, [&](CWalletTx& wtx, bool /* new_tx */) {
+    return wallet.AddToWallet(MakeTransactionRef(tx), std::nullopt, state, [&](CWalletTx& wtx, bool /* new_tx */) {
         // Assign wtx.m_state to simplify test and avoid the need to simulate
         // reorg events. Without this, AddToWallet asserts false when the same
         // transaction is confirmed in different blocks.
@@ -571,7 +573,7 @@ BOOST_FIXTURE_TEST_CASE(ListCoinsTest, ListCoinsTestingSetup)
 
     // Confirm ListCoins initially returns 1 coin grouped under coinbaseKey
     // address.
-    std::map<CTxDestination, std::vector<COutput>> list;
+    std::map<CTxDestination, std::vector<GenericWalletUTXO>> list;
     {
         LOCK(wallet->cs_wallet);
         list = ListCoins(*wallet);
@@ -604,7 +606,7 @@ BOOST_FIXTURE_TEST_CASE(ListCoinsTest, ListCoinsTestingSetup)
     for (const auto& group : list) {
         for (const auto& coin : group.second) {
             LOCK(wallet->cs_wallet);
-            wallet->LockCoin(coin.outpoint);
+            wallet->LockCoin(coin.GetID());
         }
     }
     {
@@ -854,13 +856,13 @@ BOOST_FIXTURE_TEST_CASE(ZapSelectTx, TestChain100Setup)
         auto prev_tx = m_coinbase_txns[0];
 
         LOCK(wallet->cs_wallet);
-        BOOST_CHECK(wallet->HasWalletSpend(prev_tx));
+        BOOST_CHECK(wallet->HasWalletSpend(CWalletTx(prev_tx, TxStateInactive{}, std::nullopt)));
         BOOST_CHECK_EQUAL(wallet->mapWallet.count(block_hash), 1u);
 
         std::vector<uint256> vHashIn{ block_hash }, vHashOut;
         BOOST_CHECK_EQUAL(wallet->ZapSelectTx(vHashIn, vHashOut), DBErrors::LOAD_OK);
 
-        BOOST_CHECK(!wallet->HasWalletSpend(prev_tx));
+        BOOST_CHECK(!wallet->HasWalletSpend(CWalletTx(prev_tx, TxStateInactive{}, std::nullopt)));
         BOOST_CHECK_EQUAL(wallet->mapWallet.count(block_hash), 0u);
     }
 
@@ -931,7 +933,7 @@ BOOST_FIXTURE_TEST_CASE(wallet_sync_tx_invalid_state_test, TestingSetup)
     CMutableTransaction mtx;
     mtx.vout.push_back({COIN, GetScriptForDestination(*op_dest)});
     mtx.vin.push_back(CTxIn(g_insecure_rand_ctx.rand256(), 0));
-    const auto& tx_id_to_spend = wallet.AddToWallet(MakeTransactionRef(mtx), TxStateInMempool{})->GetHash();
+    const auto& tx_id_to_spend = wallet.AddToWallet(MakeTransactionRef(mtx), std::nullopt, TxStateInMempool{})->GetHash();
 
     {
         // Cache and verify available balance for the wtx

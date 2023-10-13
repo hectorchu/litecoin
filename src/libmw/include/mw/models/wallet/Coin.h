@@ -33,7 +33,7 @@ static constexpr uint32_t CUSTOM_KEY{std::numeric_limits<uint32_t>::max() - 1};
 static constexpr uint32_t UNKNOWN_INDEX{std::numeric_limits<uint32_t>::max()};
 
 /// <summary>
-/// Represents an output owned by the wallet, and the keys necessary to spend it.
+/// Represents an output owned by the wallet, or one sent by the wallet.
 /// </summary>
 struct Coin : public Traits::ISerializable {
     static constexpr uint8_t LATEST_VERSION = 2;
@@ -70,6 +70,12 @@ struct Coin : public Traits::ISerializable {
     // This allows us to scan for outputs while wallet is locked, and recalculate
     // the output key once the wallet becomes unlocked.
     std::optional<SecretKey> shared_secret;
+
+    bool operator==(const Coin& rhs) const
+    {
+        return std::tie(address_index, spend_key, blind, amount, output_id, sender_key, address, shared_secret) ==
+            std::tie(rhs.address_index, rhs.spend_key, rhs.blind, rhs.amount, rhs.output_id, rhs.sender_key, rhs.address, rhs.shared_secret);
+    }
 
     bool IsChange() const noexcept { return address_index == CHANGE_INDEX; }
     bool IsPegIn() const noexcept { return address_index == PEGIN_INDEX; }

@@ -12,7 +12,7 @@ BOOST_FIXTURE_TEST_SUITE(TestMMRLeafSetCache, MWEBTestingSetup)
 BOOST_AUTO_TEST_CASE(LeafSetCacheTest)
 {
     {
-        LeafSet::Ptr pLeafset = LeafSet::Open(GetDataDir(), 0);
+        LeafSet::Ptr pLeafset = LeafSet::Open(m_path_root, 0);
 
         pLeafset->Add(mmr::LeafIndex::At(0));
         pLeafset->Add(mmr::LeafIndex::At(1));
@@ -25,7 +25,7 @@ BOOST_AUTO_TEST_CASE(LeafSetCacheTest)
 
     {
         // Reload from disk
-        LeafSet::Ptr pLeafset = LeafSet::Open(GetDataDir(), 1);
+        LeafSet::Ptr pLeafset = LeafSet::Open(m_path_root, 1);
 
         // Create cache and validate
         LeafSetCache::Ptr pCache = std::make_shared<LeafSetCache>(pLeafset);

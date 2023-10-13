@@ -6,8 +6,8 @@
 
 #include <mw/common/Traits.h>
 #include <mw/models/crypto/BigInteger.h>
+#include <crypto/siphash.h>
 
-#include <boost/functional/hash.hpp>
 #include <cassert>
 
 // Forward Declarations
@@ -91,7 +91,9 @@ namespace std
     {
         size_t operator()(const Commitment& commitment) const
         {
-            return boost::hash_value(commitment.vec());
+            CSipHasher hasher(0, 0);
+            hasher.Write(commitment.data(), commitment.size());
+            return static_cast<size_t>(hasher.Finalize());
         }
     };
 } // namespace std

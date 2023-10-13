@@ -47,17 +47,17 @@ mw::BlockUndo::CPtr CoinsViewCache::ApplyBlock(const mw::Block::CPtr& pBlock)
     std::vector<mw::Hash> coinsAdded;
     std::for_each(
         pBlock->GetOutputs().cbegin(), pBlock->GetOutputs().cend(),
-        [this, &pBlock, &coinsAdded](const Output& output) {
+        [this, &pBlock, &coinsAdded](const mw::Output& output) {
             AddUTXO(pBlock->GetHeight(), output);
             coinsAdded.push_back(output.GetOutputID());
         }
     );
 
-    std::vector<UTXO> coinsSpent;
+    std::vector<mw::UTXO> coinsSpent;
     std::for_each(
         pBlock->GetInputs().cbegin(), pBlock->GetInputs().cend(),
         [this, &coinsSpent](const Input& input) {
-            UTXO spentUTXO = SpendUTXO(input.GetOutputID());
+            mw::UTXO spentUTXO = SpendUTXO(input.GetOutputID());
             coinsSpent.push_back(std::move(spentUTXO));
         }
     );
@@ -79,7 +79,7 @@ void CoinsViewCache::AddTx(const mw::Transaction::CPtr& pTx)
 {
     std::for_each(
         pTx->GetOutputs().cbegin(), pTx->GetOutputs().cend(),
-        [this](const Output& output) {
+        [this](const mw::Output& output) {
             AddUTXO(MEMPOOL_HEIGHT, output);
         }
     );
@@ -136,12 +136,12 @@ mw::Block::Ptr CoinsViewCache::BuildNextBlock(const uint64_t height, const std::
     MemMMR::Ptr pKernelMMR = std::make_shared<MemMMR>();
     std::for_each(
         pTransaction->GetKernels().cbegin(), pTransaction->GetKernels().cend(),
-        [&pKernelMMR](const Kernel& kernel) { pKernelMMR->Add(kernel); }
+        [&pKernelMMR](const mw::Kernel& kernel) { pKernelMMR->Add(kernel); }
     );
 
     std::for_each(
         pTransaction->GetOutputs().cbegin(), pTransaction->GetOutputs().cend(),
-        [this, height](const Output& output) { AddUTXO(height, output); }
+        [this, height](const mw::Output& output) { AddUTXO(height, output); }
     );
 
     std::for_each(
@@ -200,7 +200,7 @@ bool CoinsViewCache::HasSpendInCache(const mw::Hash& output_id) const noexcept
     return false;
 }
 
-void CoinsViewCache::AddUTXO(const uint64_t header_height, const Output& output)
+void CoinsViewCache::AddUTXO(const uint64_t header_height, const mw::Output& output)
 {
     UTXO::CPtr pUTXO = GetUTXO(output.GetOutputID());
     if (pUTXO != nullptr) {// && m_pLeafSet->Contains(pUTXO->GetLeafIndex())) {

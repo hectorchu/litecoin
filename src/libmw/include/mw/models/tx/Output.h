@@ -15,6 +15,8 @@
 // Forward Declarations
 class StealthAddress;
 
+MW_NAMESPACE
+
 ////////////////////////////////////////
 // OUTPUT MESSAGE
 ////////////////////////////////////////
@@ -87,7 +89,7 @@ public:
     const mw::Hash& GetHash() const noexcept final { return m_hash; }
 
 private:
-    mw::Hash m_hash;
+    mw::Hash m_hash{};
 };
 
 ////////////////////////////////////////
@@ -213,14 +215,14 @@ private:
             .hash();
     }
 
-    Commitment m_commitment;
-    PublicKey m_senderPubKey;
-    PublicKey m_receiverPubKey;
-    OutputMessage m_message;
-    RangeProof::CPtr m_pProof;
-    Signature m_signature;
+    Commitment m_commitment{};
+    PublicKey m_senderPubKey{};
+    PublicKey m_receiverPubKey{};
+    OutputMessage m_message{};
+    RangeProof::CPtr m_pProof{};
+    Signature m_signature{};
 
-    mw::Hash m_hash;
+    mw::Hash m_hash{};
 };
 
 // Sorts by output ID (hash)
@@ -231,3 +233,5 @@ static const struct
         return a.GetOutputID() < b.GetOutputID();
     }
 } OutputSort;
+
+END_NAMESPACE

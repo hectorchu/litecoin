@@ -206,7 +206,7 @@ void DoCheck(const std::string& prv, const std::string& pub, const std::string& 
 
             // Evaluate the descriptor selected by `t` in position `i`.
             FlatSigningProvider script_provider, script_provider_cached;
-            std::vector<CScript> spks, spks_cached;
+            std::vector<GenericAddress> spks, spks_cached;
             DescriptorCache desc_cache;
             BOOST_CHECK((t ? parse_priv : parse_pub)->Expand(i, key_provider, spks, script_provider, &desc_cache));
 
@@ -288,7 +288,7 @@ void DoCheck(const std::string& prv, const std::string& pub, const std::string& 
             if (!(flags & DERIVE_HARDENED)) {
                 // Evaluate the descriptor at i + 1
                 FlatSigningProvider script_provider1, script_provider_cached1;
-                std::vector<CScript> spks1, spk1_from_cache;
+                std::vector<GenericAddress> spks1, spk1_from_cache;
                 BOOST_CHECK((t ? parse_priv : parse_pub)->Expand(i + 1, key_provider, spks1, script_provider1, nullptr));
 
                 // Try again but use the cache from expanding i. That cache won't have the pubkeys for i + 1, but will have the parent xpub for derivation.
@@ -301,7 +301,7 @@ void DoCheck(const std::string& prv, const std::string& pub, const std::string& 
 
             // For each of the produced scripts, verify solvability, and when possible, try to sign a transaction spending it.
             for (size_t n = 0; n < spks.size(); ++n) {
-                BOOST_CHECK_EQUAL(ref[n], HexStr(spks[n]));
+                BOOST_CHECK_EQUAL(ref[n], HexStr(spks[n].GetScript()));
 
                 if (flags & SIGNABLE) {
                     CMutableTransaction spend;
@@ -312,13 +312,13 @@ void DoCheck(const std::string& prv, const std::string& pub, const std::string& 
                     txdata.Init(spend, std::move(utxos), /*force=*/true);
                     MutableTransactionSignatureCreator creator{spend, 0, CAmount{0}, &txdata, SIGHASH_DEFAULT};
                     SignatureData sigdata;
-                    BOOST_CHECK_MESSAGE(ProduceSignature(FlatSigningProvider{keys_priv}.Merge(FlatSigningProvider{script_provider}), creator, spks[n], sigdata), prv);
+                    BOOST_CHECK_MESSAGE(ProduceSignature(FlatSigningProvider{keys_priv}.Merge(FlatSigningProvider{script_provider}), creator, spks[n].GetScript(), sigdata), prv);
                 }
 
                 /* Infer a descriptor from the generated script, and verify its solvability and that it roundtrips. */
                 auto inferred = InferDescriptor(spks[n], script_provider);
                 BOOST_CHECK_EQUAL(inferred->IsSolvable(), !(flags & UNSOLVABLE));
-                std::vector<CScript> spks_inferred;
+                std::vector<GenericAddress> spks_inferred;
                 FlatSigningProvider provider_inferred;
                 BOOST_CHECK(inferred->Expand(0, provider_inferred, spks_inferred, provider_inferred));
                 BOOST_CHECK_EQUAL(spks_inferred.size(), 1U);

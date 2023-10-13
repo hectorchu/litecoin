@@ -26,13 +26,13 @@ CoinsViewDB::Ptr CoinsViewDB::Open(
     return std::shared_ptr<CoinsViewDB>(pView);
 }
 
-UTXO::CPtr CoinsViewDB::GetUTXO(const mw::Hash& output_id) const
+mw::UTXO::CPtr CoinsViewDB::GetUTXO(const mw::Hash& output_id) const
 {
     CoinDB coinDB(GetDatabase().get(), nullptr);
     return GetUTXO(coinDB, output_id);
 }
 
-UTXO::CPtr CoinsViewDB::GetUTXO(const CoinDB& coinDB, const mw::Hash& output_id) const
+mw::UTXO::CPtr CoinsViewDB::GetUTXO(const CoinDB& coinDB, const mw::Hash& output_id) const
 {
     std::vector<uint8_t> value;
 
@@ -45,22 +45,22 @@ UTXO::CPtr CoinsViewDB::GetUTXO(const CoinDB& coinDB, const mw::Hash& output_id)
     return {};
 }
 
-void CoinsViewDB::AddUTXO(CoinDB& coinDB, const Output& output)
+void CoinsViewDB::AddUTXO(CoinDB& coinDB, const mw::Output& output)
 {
     mmr::LeafIndex leafIdx = m_pOutputPMMR->Add(output.GetOutputID());
     m_pLeafSet->Add(leafIdx);
 
-    AddUTXO(coinDB, std::make_shared<UTXO>(GetBestHeader()->GetHeight(), std::move(leafIdx), output));
+    AddUTXO(coinDB, std::make_shared<mw::UTXO>(GetBestHeader()->GetHeight(), std::move(leafIdx), output));
 }
 
-void CoinsViewDB::AddUTXO(CoinDB& coinDB, const UTXO::CPtr& pUTXO)
+void CoinsViewDB::AddUTXO(CoinDB& coinDB, const mw::UTXO::CPtr& pUTXO)
 {
-    coinDB.AddUTXOs(std::vector<UTXO::CPtr>{ pUTXO });
+    coinDB.AddUTXOs(std::vector<mw::UTXO::CPtr>{pUTXO});
 }
 
 void CoinsViewDB::SpendUTXO(CoinDB& coinDB, const mw::Hash& output_id)
 {
-    UTXO::CPtr pUTXO = GetUTXO(coinDB, output_id);
+    mw::UTXO::CPtr pUTXO = GetUTXO(coinDB, output_id);
     if (pUTXO == nullptr) {
 		ThrowValidation(EConsensusError::UTXO_MISSING);
     }

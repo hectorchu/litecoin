@@ -49,10 +49,10 @@ BOOST_AUTO_TEST_CASE(ValidateStealthSum)
     ////////////////////////////////////////
     // Build outputs
     ////////////////////////////////////////
-    std::vector<Output> outputs;
+    std::vector<mw::Output> outputs;
 
     SecretKey output1_sender_key = SecretKey::Random();
-    Output output1 = Output::Create(
+    mw::Output output1 = mw::Output::Create(
         nullptr,                            // (out) blinding_factor
         output1_sender_key,                 // sender private key
         StealthAddress::Random(),           // receiver_addr
@@ -61,7 +61,7 @@ BOOST_AUTO_TEST_CASE(ValidateStealthSum)
     outputs.push_back(std::move(output1));
     
     SecretKey output2_sender_key = SecretKey::Random();
-    Output output2 = Output::Create(
+    mw::Output output2 = mw::Output::Create(
         nullptr,                            // (out) blinding_factor
         output2_sender_key,                 // sender private key
         StealthAddress::Random(),           // receiver_addr
@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(ValidateStealthSum)
     ////////////////////////////////////////
     // Build kernels
     ////////////////////////////////////////
-    Kernel kernel1_no_offset = Kernel::Create(
+    mw::Kernel kernel1_no_offset = mw::Kernel::Create(
         BlindingFactor::Random(),           // excess
         stealth_excess_no_offset,           // stealth excess
         std::nullopt,                       // fee
@@ -97,7 +97,7 @@ BOOST_AUTO_TEST_CASE(ValidateStealthSum)
         std::nullopt                        // lock_height
     );
 
-    Kernel kernel1_with_offset = Kernel::Create(
+    mw::Kernel kernel1_with_offset = mw::Kernel::Create(
         BlindingFactor::Random(),           // excess
         stealth_excess_with_offset,         // stealth excess
         std::nullopt,                       // fee
@@ -106,7 +106,7 @@ BOOST_AUTO_TEST_CASE(ValidateStealthSum)
         std::nullopt                        // lock_height
     );
 
-    Kernel kernel2_no_stealth_excess = Kernel::Create(
+    mw::Kernel kernel2_no_stealth_excess = mw::Kernel::Create(
         BlindingFactor::Random(),           // excess
         std::nullopt,                       // stealth excess
         std::nullopt,                       // fee
@@ -116,10 +116,10 @@ BOOST_AUTO_TEST_CASE(ValidateStealthSum)
     );
 
     // Validate stealth sums with a zero stealth offset
-    StealthSumValidator::Validate(SecretKey{}, TxBody{inputs, outputs, std::vector<Kernel>{kernel1_no_offset, kernel2_no_stealth_excess}});
+    StealthSumValidator::Validate(SecretKey{}, mw::TxBody{inputs, outputs, std::vector<mw::Kernel>{kernel1_no_offset, kernel2_no_stealth_excess}});
 
     // Validate stealth sums with a non-zero stealth offset
-    StealthSumValidator::Validate(stealth_offset, TxBody{inputs, outputs, std::vector<Kernel>{kernel1_with_offset, kernel2_no_stealth_excess}});
+    StealthSumValidator::Validate(stealth_offset, mw::TxBody{inputs, outputs, std::vector<mw::Kernel>{kernel1_with_offset, kernel2_no_stealth_excess}});
 }
 
 BOOST_AUTO_TEST_SUITE_END()

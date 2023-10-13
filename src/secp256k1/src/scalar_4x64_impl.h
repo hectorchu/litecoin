@@ -8,6 +8,7 @@
 #define SECP256K1_SCALAR_REPR_IMPL_H
 
 #include "modinv64_impl.h"
+#include <string.h>
 
 /* Limbs of the secp256k1 order. */
 #define SECP256K1_N_0 ((uint64_t)0xBFD25E8CD0364141ULL)

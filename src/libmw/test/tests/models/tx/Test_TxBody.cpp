@@ -18,15 +18,15 @@ BOOST_AUTO_TEST_CASE(Test_TxBody)
         .AddPlainKernel(fee).AddPeginKernel(pegInAmount)
         .Build().GetTransaction();
 
-    const TxBody& txBody = tx->GetBody();
+    const mw::TxBody& txBody = tx->GetBody();
     txBody.Validate();
 
     //
     // Serialization
     //
     std::vector<uint8_t> serialized = txBody.Serialized();
-    TxBody txBody2;
-    VectorReader(SER_NETWORK, PROTOCOL_VERSION, serialized, 0) >> txBody2;
+    mw::TxBody txBody2;
+    SpanReader(SER_NETWORK, PROTOCOL_VERSION, Span{serialized}) >> txBody2;
     BOOST_REQUIRE(txBody == txBody2);
 
     //

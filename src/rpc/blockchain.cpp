@@ -155,6 +155,25 @@ UniValue blockheaderToJSON(const CBlockIndex* tip, const CBlockIndex* blockindex
     result.pushKV("chainwork", blockindex->nChainWork.GetHex());
     result.pushKV("nTx", (uint64_t)blockindex->nTx);
 
+    if (blockindex->mweb_header != nullptr) {
+        UniValue mweb_header(UniValue::VOBJ);
+        mweb_header.pushKV("hash", blockindex->mweb_header->GetHash().ToHex());
+        mweb_header.pushKV("height", blockindex->mweb_header->GetHeight());
+        mweb_header.pushKV("kernel_offset", blockindex->mweb_header->GetKernelOffset().ToHex());
+        mweb_header.pushKV("stealth_offset", blockindex->mweb_header->GetStealthOffset().ToHex());
+        mweb_header.pushKV("num_kernels", blockindex->mweb_header->GetNumKernels());
+        mweb_header.pushKV("num_txos", blockindex->mweb_header->GetNumTXOs());
+        mweb_header.pushKV("kernel_root", blockindex->mweb_header->GetKernelRoot().ToHex());
+        mweb_header.pushKV("output_root", blockindex->mweb_header->GetOutputRoot().ToHex());
+        mweb_header.pushKV("leaf_root", blockindex->mweb_header->GetLeafsetRoot().ToHex());
+        result.pushKV("mweb_header", mweb_header);
+
+        result.pushKV("mweb_amount", blockindex->mweb_amount);
+        if (blockindex->pprev) {
+            result.pushKV("prev_mweb_amount", blockindex->pprev->mweb_amount);
+        }
+    }
+
     if (blockindex->pprev)
         result.pushKV("previousblockhash", blockindex->pprev->GetBlockHash().GetHex());
     if (pnext)
@@ -166,7 +185,7 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
 {
     UniValue result = blockheaderToJSON(tip, blockindex);
 
-    result.pushKV("strippedsize", (int)::GetSerializeSize(block, PROTOCOL_VERSION | SERIALIZE_TRANSACTION_NO_WITNESS));
+    result.pushKV("strippedsize", (int)::GetSerializeSize(block, PROTOCOL_VERSION | SERIALIZE_TRANSACTION_NO_WITNESS | SERIALIZE_NO_MWEB));
     result.pushKV("size", (int)::GetSerializeSize(block, PROTOCOL_VERSION));
     result.pushKV("weight", (int)::GetBlockWeight(block));
     UniValue txs(UniValue::VARR);
@@ -196,6 +215,89 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
 
     result.pushKV("tx", txs);
 
+    bool txDetails = (verbosity == TxVerbosity::SHOW_DETAILS || verbosity == TxVerbosity::SHOW_DETAILS_AND_PREVOUT); // MW: TODO - Use a switch case statemnt like above
+
+    if (!block.mweb_block.IsNull()) {
+        UniValue mweb_block(UniValue::VOBJ);
+
+        // MWEB Header
+        mweb_block.pushKV("hash", block.mweb_block.GetMWEBHeader()->GetHash().ToHex());
+        mweb_block.pushKV("height", block.mweb_block.GetMWEBHeader()->GetHeight());
+        mweb_block.pushKV("kernel_offset", block.mweb_block.GetMWEBHeader()->GetKernelOffset().ToHex());
+        mweb_block.pushKV("stealth_offset", block.mweb_block.GetMWEBHeader()->GetStealthOffset().ToHex());
+        mweb_block.pushKV("num_kernels", block.mweb_block.GetMWEBHeader()->GetNumKernels());
+        mweb_block.pushKV("num_txos", block.mweb_block.GetMWEBHeader()->GetNumTXOs());
+        mweb_block.pushKV("kernel_root", block.mweb_block.GetMWEBHeader()->GetKernelRoot().ToHex());
+        mweb_block.pushKV("output_root", block.mweb_block.GetMWEBHeader()->GetOutputRoot().ToHex());
+        mweb_block.pushKV("leaf_root", block.mweb_block.GetMWEBHeader()->GetLeafsetRoot().ToHex());
+
+        // MWEB Inputs
+        UniValue inputs(UniValue::VARR);
+        for (const auto& input : block.mweb_block.m_block->GetInputs()) {
+            if (txDetails) {
+                UniValue objInput(UniValue::VOBJ);
+                objInput.pushKV("output_id", input.GetOutputID().ToHex());
+                objInput.pushKV("commit", input.GetCommitment().ToHex());
+                objInput.pushKV("output_pubkey", input.GetOutputPubKey().ToHex());
+
+                if (!!input.GetInputPubKey()) {
+                    objInput.pushKV("input_pubkey", input.GetInputPubKey()->ToHex());
+                }
+
+                if (!input.GetExtraData().empty()) {
+                    objInput.pushKV("extra_data", HexStr(input.GetExtraData()));
+                }
+
+                objInput.pushKV("sig", input.GetSignature().ToHex());
+                inputs.push_back(objInput);
+            } else {
+                inputs.push_back(input.GetOutputID().ToHex());
+            }
+        }
+        mweb_block.pushKV("inputs", inputs);
+
+        // MWEB Outputs
+        UniValue outputs(UniValue::VARR);
+        for (const auto& output : block.mweb_block.m_block->GetOutputs()) {
+            if (txDetails) {
+                UniValue objOutput(UniValue::VOBJ);
+                objOutput.pushKV("output_id", output.GetOutputID().ToHex());
+                objOutput.pushKV("commit", output.GetCommitment().ToHex());
+                objOutput.pushKV("sender_pubkey", output.GetSenderPubKey().ToHex());
+                objOutput.pushKV("receiver_pubkey", output.GetReceiverPubKey().ToHex());
+                objOutput.pushKV("range_proof", HexStr(output.GetRangeProof()->Serialized()));
+                objOutput.pushKV("message", HexStr(output.GetOutputMessage().Serialized()));
+                outputs.push_back(objOutput);
+            } else {
+                outputs.push_back(output.GetOutputID().ToHex());
+            }
+        }
+        mweb_block.pushKV("outputs", outputs);
+
+        // MWEB Kernels
+        UniValue kernels(UniValue::VARR);
+        for (const auto& kernel : block.mweb_block.m_block->GetKernels()) {
+            if (txDetails) {
+                UniValue objKernel(UniValue::VOBJ);
+                objKernel.pushKV("kernel_id", kernel.GetKernelID().ToHex());
+                objKernel.pushKV("features", kernel.GetFeatures());
+                objKernel.pushKV("commit", kernel.GetCommitment().ToHex());
+                objKernel.pushKV("fee", kernel.GetFee());
+                objKernel.pushKV("lock_height", kernel.GetLockHeight());
+                objKernel.pushKV("excess", kernel.GetExcess().ToHex());
+                objKernel.pushKV("signature", kernel.GetSignature().ToHex());
+                if (!kernel.GetExtraData().empty()) {
+                    objKernel.pushKV("extra_data", HexStr(kernel.GetExtraData()));
+                }
+                kernels.push_back(objKernel);
+            } else {
+                kernels.push_back(kernel.GetCommitment().ToHex());
+            }
+        }
+        mweb_block.pushKV("kernels", kernels);
+
+        result.pushKV("mweb", mweb_block);
+    }
     return result;
 }
 
@@ -1982,7 +2084,7 @@ static RPCHelpMan getblockstats()
 
 namespace {
 //! Search for a given set of pubkey scripts
-bool FindScriptPubKey(std::atomic<int>& scan_progress, const std::atomic<bool>& should_abort, int64_t& count, CCoinsViewCursor* cursor, const std::set<CScript>& needles, std::map<COutPoint, Coin>& out_results, std::function<void()>& interruption_point)
+bool FindScriptPubKey(std::atomic<int>& scan_progress, const std::atomic<bool>& should_abort, int64_t& count, CCoinsViewCursor* cursor, const std::set<GenericAddress>& needles, std::map<COutPoint, Coin>& out_results, std::function<void()>& interruption_point)
 {
     scan_progress = 0;
     count = 0;
@@ -2143,15 +2245,15 @@ static RPCHelpMan scantxoutset()
             throw JSONRPCError(RPC_MISC_ERROR, "scanobjects argument is required for the start action");
         }
 
-        std::set<CScript> needles;
-        std::map<CScript, std::string> descriptors;
+        std::set<GenericAddress> needles;
+        std::map<GenericAddress, std::string> descriptors;
         CAmount total_in = 0;
 
         // loop through the scan objects
         for (const UniValue& scanobject : request.params[1].get_array().getValues()) {
             FlatSigningProvider provider;
             auto scripts = EvalDescriptorStringOrObject(scanobject, provider);
-            for (CScript& script : scripts) {
+            for (GenericAddress& script : scripts) {
                 std::string inferred = InferDescriptor(script, provider)->ToString();
                 needles.emplace(script);
                 descriptors.emplace(std::move(script), std::move(inferred));

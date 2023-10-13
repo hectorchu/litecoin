@@ -13,7 +13,7 @@ BOOST_AUTO_TEST_CASE(PlainKernel_Test)
 {
     CAmount fee = 1000;
     BlindingFactor excess_blind = BlindingFactor::Random();
-    Kernel kernel = Kernel::Create(excess_blind, std::nullopt, fee, std::nullopt, std::vector<PegOutCoin>{}, std::nullopt);
+    mw::Kernel kernel = mw::Kernel::Create(excess_blind, std::nullopt, fee, std::nullopt, std::vector<PegOutCoin>{}, std::nullopt);
 
     //
     // Serialization
@@ -21,7 +21,7 @@ BOOST_AUTO_TEST_CASE(PlainKernel_Test)
     {
         std::vector<uint8_t> serialized = kernel.Serialized();
 
-        Kernel kernel2;
+        mw::Kernel kernel2;
         CDataStream(serialized, SER_DISK, 0) >> kernel2;
         BOOST_REQUIRE(kernel == kernel2);
     }
@@ -61,8 +61,8 @@ BOOST_AUTO_TEST_CASE(NonStandardKernel_Test)
     PegOutCoin pegout(2000, CScript(rand1.data(), rand1.data() + rand1.size()));
     int32_t lock_height = 123456;
     std::vector<uint8_t> rand2 = secret_key_t<30>::Random().vec();
-    Kernel standard_kernel(
-        Kernel::FEE_FEATURE_BIT | Kernel::PEGIN_FEATURE_BIT | Kernel::PEGOUT_FEATURE_BIT | Kernel::HEIGHT_LOCK_FEATURE_BIT | Kernel::STEALTH_EXCESS_FEATURE_BIT,
+    mw::Kernel standard_kernel(
+        mw::Kernel::FEE_FEATURE_BIT | mw::Kernel::PEGIN_FEATURE_BIT | mw::Kernel::PEGOUT_FEATURE_BIT | mw::Kernel::HEIGHT_LOCK_FEATURE_BIT | mw::Kernel::STEALTH_EXCESS_FEATURE_BIT,
         fee,
         pegin,
         std::vector<PegOutCoin>{PegOutCoin(2000, CScript(rand2.data(), rand2.data() + rand2.size()))},
@@ -73,8 +73,8 @@ BOOST_AUTO_TEST_CASE(NonStandardKernel_Test)
         Signature(SecretKey64::Random().GetBigInt())
     );
     std::vector<uint8_t> rand3 = secret_key_t<30>::Random().vec();
-    Kernel nonstandard_kernel1(
-        Kernel::ALL_FEATURE_BITS,
+    mw::Kernel nonstandard_kernel1(
+        mw::Kernel::ALL_FEATURE_BITS,
         fee,
         pegin,
         std::vector<PegOutCoin>{PegOutCoin(2000, CScript(rand3.data(), rand3.data() + rand3.size()))},
@@ -85,7 +85,7 @@ BOOST_AUTO_TEST_CASE(NonStandardKernel_Test)
         standard_kernel.GetSignature()
     );
 
-    Kernel nonstandard_kernel2(
+    mw::Kernel nonstandard_kernel2(
         0x20,
         std::nullopt,
         std::nullopt,

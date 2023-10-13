@@ -964,3 +964,39 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
     def is_syscall_sandbox_compiled(self):
         """Checks whether the syscall sandbox was compiled."""
         return self.config["components"].getboolean("ENABLE_SYSCALL_SANDBOX")
+
+
+#import pdb
+class LitecoinTestFramework(BitcoinTestFramework):
+    def run_test(self):
+        """Tests must override this method to define test logic"""
+        raise NotImplementedError
+    
+    def set_test_params(self):
+        """Tests must override this method to change default values for number of nodes, topology, etc"""
+        raise NotImplementedError
+
+    def setup_mweb_chain(self, node: TestNode, pegin_amount: int = 1) -> None:
+        generate_addr = node.getnewaddress()
+
+        # Create all pre-MWEB blocks
+        self.generatetoaddress(node, nblocks=431, address=generate_addr, sync_fun=self.no_op)
+
+        # Pegin some coins
+        mweb_addr = node.getnewaddress(address_type='mweb')
+        outputs= [{mweb_addr: pegin_amount}]
+        options = {}
+        options["add_to_wallet"] = True
+        options['change_address'] = generate_addr
+        #options["subtract_fee_from_outputs"] = [0]
+        print(outputs)
+        #pdb.set_trace()
+        tx = node.send(outputs=outputs, options=options)
+        print(node.gettransaction(tx['txid']))
+
+        
+        print(node.getrawmempool())
+        #node.sendtoaddress(node.getnewaddress(address_type='mweb'), pegin_amount)
+
+        # Create some blocks - activate MWEB
+        self.generatetoaddress(node, nblocks=1, address=generate_addr, sync_fun=self.no_op)

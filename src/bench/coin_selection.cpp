@@ -14,7 +14,7 @@
 using node::NodeContext;
 using wallet::AttemptSelection;
 using wallet::CHANGE_LOWER;
-using wallet::COutput;
+using wallet::CWalletUTXO;
 using wallet::CWallet;
 using wallet::CWalletTx;
 using wallet::CoinEligibilityFilter;
@@ -31,7 +31,7 @@ static void addCoin(const CAmount& nValue, const CWallet& wallet, std::vector<st
     tx.nLockTime = nextLockTime++; // so all transactions get different hashes
     tx.vout.resize(1);
     tx.vout[0].nValue = nValue;
-    wtxs.push_back(std::make_unique<CWalletTx>(MakeTransactionRef(std::move(tx)), TxStateInactive{}));
+    wtxs.push_back(std::make_unique<CWalletTx>(MakeTransactionRef(std::move(tx)), TxStateInactive{}, std::nullopt));
 }
 
 // Simple benchmark for wallet coin selection. Note that it maybe be necessary
@@ -89,7 +89,7 @@ static void add_coin(const CAmount& nValue, int nInput, std::vector<OutputGroup>
     CMutableTransaction tx;
     tx.vout.resize(nInput + 1);
     tx.vout[nInput].nValue = nValue;
-    COutput output(COutPoint(tx.GetHash(), nInput), tx.vout.at(nInput), /*depth=*/ 0, /*input_bytes=*/ -1, /*spendable=*/ true, /*solvable=*/ true, /*safe=*/ true, /*time=*/ 0, /*from_me=*/ true, /*fees=*/ 0);
+    CWalletUTXO output(COutPoint(tx.GetHash(), nInput), tx.vout.at(nInput), /*depth=*/ 0, /*input_bytes=*/ -1, /*spendable=*/ true, /*solvable=*/ true, /*safe=*/ true, /*time=*/ 0, /*from_me=*/ true, /*fees=*/ 0);
     set.emplace_back();
     set.back().Insert(output, /*ancestors=*/ 0, /*descendants=*/ 0, /*positive_only=*/ false);
 }

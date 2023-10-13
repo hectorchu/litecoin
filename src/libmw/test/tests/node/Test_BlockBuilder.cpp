@@ -15,10 +15,10 @@ BOOST_FIXTURE_TEST_SUITE(TestBlockBuilder, MWEBTestingSetup)
 
 BOOST_AUTO_TEST_CASE(BlockBuilder)
 {
-    auto db_view = CoinsViewDB::Open(GetDataDir(), nullptr, GetDB());
+    auto db_view = CoinsViewDB::Open(m_path_root, nullptr, GetDB());
     auto cached_view = std::make_shared<CoinsViewCache>(db_view);
 
-    test::Miner miner(GetDataDir());
+    test::Miner miner(m_path_root);
 
     ///////////////////////
     // Mine Block 1

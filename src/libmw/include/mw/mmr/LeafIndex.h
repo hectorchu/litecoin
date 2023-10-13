@@ -8,6 +8,7 @@
 #include <mw/common/Traits.h>
 #include <mw/mmr/Index.h>
 #include <mw/util/BitUtil.h>
+#include <limits>
 
 MMR_NAMESPACE
 

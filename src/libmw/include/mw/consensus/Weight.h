@@ -8,7 +8,7 @@
 class Weight
 {
 public:
-    static size_t Calculate(const TxBody& tx_body)
+    static size_t Calculate(const mw::TxBody& tx_body)
     {
         size_t input_weight = std::accumulate(
             tx_body.GetInputs().begin(), tx_body.GetInputs().end(), (size_t)0,
@@ -19,7 +19,7 @@ public:
 
         size_t kernel_weight = std::accumulate(
             tx_body.GetKernels().begin(), tx_body.GetKernels().end(), (size_t)0,
-            [](size_t sum, const Kernel& kernel) {
+            [](size_t sum, const mw::Kernel& kernel) {
                 size_t kern_weight = CalcKernelWeight(
                     kernel.HasStealthExcess(),
                     kernel.GetPegOuts(),
@@ -31,7 +31,7 @@ public:
 
         size_t output_weight = std::accumulate(
             tx_body.GetOutputs().begin(), tx_body.GetOutputs().end(), (size_t)0,
-            [](size_t sum, const Output& output) {
+            [](size_t sum, const mw::Output& output) {
                 return sum + CalcOutputWeight(output.HasStandardFields(), output.GetExtraData());
             }
         );
@@ -39,7 +39,7 @@ public:
         return input_weight + kernel_weight + output_weight;
     }
 
-    static bool ExceedsMaximum(const TxBody& tx_body)
+    static bool ExceedsMaximum(const mw::TxBody& tx_body)
     {
         return tx_body.GetInputs().size() > mw::MAX_NUM_INPUTS || Calculate(tx_body) > mw::MAX_BLOCK_WEIGHT;
     }

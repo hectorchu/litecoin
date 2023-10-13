@@ -32,7 +32,7 @@ public:
     //
     // Constructors
     //
-    Transaction(BlindingFactor kernel_offset, BlindingFactor stealth_offset, TxBody body)
+    Transaction(BlindingFactor kernel_offset, BlindingFactor stealth_offset, mw::TxBody body)
         : m_kernelOffset(std::move(kernel_offset)), m_stealthOffset(std::move(stealth_offset)), m_body(std::move(body))
     {
         m_hash = Hashed(*this);
@@ -48,8 +48,8 @@ public:
         BlindingFactor kernel_offset,
         BlindingFactor owner_offset,
         std::vector<Input> inputs,
-        std::vector<Output> outputs,
-        std::vector<Kernel> kernels
+        std::vector<mw::Output> outputs,
+        std::vector<mw::Kernel> kernels
     );
 
     //
@@ -71,10 +71,10 @@ public:
     //
     const BlindingFactor& GetKernelOffset() const noexcept { return m_kernelOffset; }
     const BlindingFactor& GetStealthOffset() const noexcept { return m_stealthOffset; }
-    const TxBody& GetBody() const noexcept { return m_body; }
+    const mw::TxBody& GetBody() const noexcept { return m_body; }
     const std::vector<Input>& GetInputs() const noexcept { return m_body.GetInputs(); }
-    const std::vector<Output>& GetOutputs() const noexcept { return m_body.GetOutputs(); }
-    const std::vector<Kernel>& GetKernels() const noexcept { return m_body.GetKernels(); }
+    const std::vector<mw::Output>& GetOutputs() const noexcept { return m_body.GetOutputs(); }
+    const std::vector<mw::Kernel>& GetKernels() const noexcept { return m_body.GetKernels(); }
     CAmount GetTotalFee() const noexcept { return m_body.GetTotalFee(); }
     int32_t GetLockHeight() const noexcept { return m_body.GetLockHeight(); }
     uint64_t CalcWeight() const noexcept { return (uint64_t)Weight::Calculate(m_body); }
@@ -115,7 +115,7 @@ public:
     
     std::string Print() const noexcept
     {
-        auto print_kernel = [](const Kernel& kernel) -> std::string {
+        auto print_kernel = [](const mw::Kernel& kernel) -> std::string {
             return StringUtil::Format(
                 "kern(kernel_id:{}, commit:{}, pegin: {}, pegout: {}, fee: {})",
                 kernel.GetKernelID(),
@@ -127,7 +127,7 @@ public:
         };
         std::string kernels_str = std::accumulate(
             GetKernels().begin(), GetKernels().end(), std::string{},
-            [&print_kernel](std::string str, const Kernel& kern) {
+            [&print_kernel](std::string str, const mw::Kernel& kern) {
                 return str.empty() ? print_kernel(kern) : std::move(str) + ", " + print_kernel(kern);
             }
         );
@@ -149,7 +149,7 @@ private:
     BlindingFactor m_stealthOffset;
 
     // The transaction body.
-    TxBody m_body;
+    mw::TxBody m_body;
 
     mw::Hash m_hash;
 };

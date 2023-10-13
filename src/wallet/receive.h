@@ -6,23 +6,24 @@
 #define BITCOIN_WALLET_RECEIVE_H
 
 #include <consensus/amount.h>
+#include <mweb/mweb_wallet.h>
 #include <wallet/ismine.h>
 #include <wallet/transaction.h>
 #include <wallet/wallet.h>
 
 namespace wallet {
-isminetype InputIsMine(const CWallet& wallet, const CTxIn& txin) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
+isminetype InputIsMine(const CWallet& wallet, const GenericInput& input) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
 
 /** Returns whether all of the inputs match the filter */
-bool AllInputsMine(const CWallet& wallet, const CTransaction& tx, const isminefilter& filter);
+bool AllInputsMine(const CWallet& wallet, const CWalletTx& wtx, const isminefilter& filter);
 
-CAmount OutputGetCredit(const CWallet& wallet, const CTxOut& txout, const isminefilter& filter);
-CAmount TxGetCredit(const CWallet& wallet, const CTransaction& tx, const isminefilter& filter);
+CAmount OutputGetCredit(const CWallet& wallet, const GenericOutput& output, const isminefilter& filter);
+CAmount TxGetCredit(const CWallet& wallet, const CTransaction& tx, const std::optional<MWEB::WalletTxInfo>& mweb_wtx_info, const isminefilter& filter);
 
 bool ScriptIsChange(const CWallet& wallet, const CScript& script) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
-bool OutputIsChange(const CWallet& wallet, const CTxOut& txout) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
-CAmount OutputGetChange(const CWallet& wallet, const CTxOut& txout) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
-CAmount TxGetChange(const CWallet& wallet, const CTransaction& tx);
+bool OutputIsChange(const CWallet& wallet, const GenericOutput& output) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
+CAmount OutputGetChange(const CWallet& wallet, const GenericOutput& output) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
+CAmount TxGetChange(const CWallet& wallet, const CTransaction& tx, const std::optional<MWEB::WalletTxInfo>& mweb_wtx_info);
 
 CAmount CachedTxGetCredit(const CWallet& wallet, const CWalletTx& wtx, const isminefilter& filter)
     EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
@@ -37,7 +38,7 @@ struct COutputEntry
 {
     CTxDestination destination;
     CAmount amount;
-    int vout;
+    GenericOutputID output_id;
 };
 void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
                         std::list<COutputEntry>& listReceived,

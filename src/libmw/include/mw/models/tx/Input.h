@@ -4,12 +4,15 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or http://www.opensource.org/licenses/mit-license.php.
 
+#include <consensus/amount.h>
 #include <mw/common/Traits.h>
 #include <mw/crypto/Hasher.h>
 #include <mw/models/crypto/Commitment.h>
 #include <mw/models/crypto/PublicKey.h>
 #include <mw/models/crypto/Signature.h>
 #include <mw/models/crypto/SignedMessage.h>
+
+#include <optional>
 
 ////////////////////////////////////////
 // INPUT
@@ -20,12 +23,12 @@ class Input :
     public Traits::IPrintable,
     public Traits::ISerializable
 {
+public:
     enum FeatureBit {
         STEALTH_KEY_FEATURE_BIT = 0x01,
         EXTRA_DATA_FEATURE_BIT = 0x02
     };
 
-public:
     //
     // Constructors
     //
@@ -65,6 +68,7 @@ public:
     // Getters
     //
     bool IsStandard() const noexcept { return m_features < FeatureBit::EXTRA_DATA_FEATURE_BIT; }
+    uint8_t GetFeatures() const noexcept { return m_features; }
     const mw::Hash& GetOutputID() const noexcept { return m_outputID; }
     const Commitment& GetCommitment() const noexcept final { return m_commitment; }
     const PublicKey& GetOutputPubKey() const noexcept { return m_outputPubKey; }

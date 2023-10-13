@@ -32,6 +32,11 @@ private:
     TransactionDesc() {}
 
     static QString FormatTxStatus(const interfaces::WalletTxStatus& status, bool inMempool);
+
+    static QString toHTML_Addresses(interfaces::Wallet& wallet, const interfaces::WalletTx& wtx, TransactionRecord* rec);
+    static QString toHTML_Amounts(interfaces::Wallet& wallet, const interfaces::WalletTx& wtx, const interfaces::WalletTxStatus& status, BitcoinUnit unit);
+    static QString toHTML_OrderForm(const interfaces::WalletOrderForm& orderForm);
+    static QString toHTML_Debug(interfaces::Node& node, interfaces::Wallet& wallet, const interfaces::WalletTx& wtx, TransactionRecord* rec, BitcoinUnit unit);
 };
 
 #endif // BITCOIN_QT_TRANSACTIONDESC_H

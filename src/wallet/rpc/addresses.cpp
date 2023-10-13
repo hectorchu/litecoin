@@ -22,7 +22,7 @@ RPCHelpMan getnewaddress()
                 "so payments received with the address will be associated with 'label'.\n",
                 {
                     {"label", RPCArg::Type::STR, RPCArg::Default{""}, "The label name for the address to be linked to. It can also be set to the empty string \"\" to represent the default label. The label does not need to exist, it will be created if there is no label by the given name."},
-                    {"address_type", RPCArg::Type::STR, RPCArg::DefaultHint{"set by -addresstype"}, "The address type to use. Options are \"legacy\", \"p2sh-segwit\", \"bech32\", and \"bech32m\"."},
+                    {"address_type", RPCArg::Type::STR, RPCArg::DefaultHint{"set by -addresstype"}, "The address type to use. Options are \"legacy\", \"p2sh-segwit\", \"bech32\", \"bech32m\", and \"mweb\"."},
                 },
                 RPCResult{
                     RPCResult::Type::STR, "address", "The new litecoin address"
@@ -74,7 +74,7 @@ RPCHelpMan getrawchangeaddress()
                 "\nReturns a new Litecoin address, for receiving change.\n"
                 "This is for use with raw transactions, NOT normal use.\n",
                 {
-                    {"address_type", RPCArg::Type::STR, RPCArg::DefaultHint{"set by -changetype"}, "The address type to use. Options are \"legacy\", \"p2sh-segwit\", \"bech32\", and \"bech32m\"."},
+                    {"address_type", RPCArg::Type::STR, RPCArg::DefaultHint{"set by -changetype"}, "The address type to use. Options are \"legacy\", \"p2sh-segwit\", \"bech32\", \"bech32m\", and \"mweb\"."},
                 },
                 RPCResult{
                     RPCResult::Type::STR, "address", "The address"
@@ -475,6 +475,14 @@ public:
         return obj;
     }
 
+    UniValue operator()(const StealthAddress& id) const
+    {
+        UniValue obj(UniValue::VOBJ);
+        obj.pushKV("scan_pubkey", id.GetScanPubKey().ToHex());
+        obj.pushKV("spend_pubkey", id.GetSpendPubKey().ToHex());
+        return obj;
+    }
+
     UniValue operator()(const WitnessV1Taproot& id) const { return UniValue(UniValue::VOBJ); }
     UniValue operator()(const WitnessUnknown& id) const { return UniValue(UniValue::VOBJ); }
 };
@@ -511,6 +519,7 @@ RPCHelpMan getaddressinfo()
                         {RPCResult::Type::STR, "parent_desc", /*optional=*/true, "The descriptor used to derive this address if this is a descriptor wallet"},
                         {RPCResult::Type::BOOL, "isscript", "If the key is a script."},
                         {RPCResult::Type::BOOL, "ischange", "If the address was used for change output."},
+                        {RPCResult::Type::BOOL, "ismweb", "If the address was an MWEB address."},
                         {RPCResult::Type::BOOL, "iswitness", "If the address is a witness address."},
                         {RPCResult::Type::NUM, "witness_version", /*optional=*/true, "The version number of the witness program."},
                         {RPCResult::Type::STR_HEX, "witness_program", /*optional=*/true, "The hex value of the witness program."},
@@ -530,6 +539,8 @@ RPCHelpMan getaddressinfo()
                             "and relation to the wallet (ismine, iswatchonly)."},
                         }},
                         {RPCResult::Type::BOOL, "iscompressed", /*optional=*/true, "If the pubkey is compressed."},
+                        {RPCResult::Type::STR_HEX, "scan_pubkey", /*optional=*/true, "The scan pubkey for the stealth address."},
+                        {RPCResult::Type::STR_HEX, "spend_pubkey", /*optional=*/true, "The spend pubkey for the stealth address."},
                         {RPCResult::Type::NUM_TIME, "timestamp", /*optional=*/true, "The creation time of the key, if available, expressed in " + UNIX_EPOCH_TIME + "."},
                         {RPCResult::Type::STR, "hdkeypath", /*optional=*/true, "The HD keypath, if the key is HD and available."},
                         {RPCResult::Type::STR_HEX, "hdseedid", /*optional=*/true, "The Hash160 of the HD seed."},
@@ -587,7 +598,7 @@ RPCHelpMan getaddressinfo()
         ret.pushKV("solvable", false);
     }
 
-    const auto& spk_mans = pwallet->GetScriptPubKeyMans(scriptPubKey);
+    const auto& spk_mans = pwallet->GetScriptPubKeyMans(GenericAddress(scriptPubKey));
     // In most cases there is only one matching ScriptPubKey manager and we can't resolve ambiguity in a better way
     ScriptPubKeyMan* spk_man{nullptr};
     if (spk_mans.size()) spk_man = *spk_mans.begin();

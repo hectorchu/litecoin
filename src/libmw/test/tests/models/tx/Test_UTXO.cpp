@@ -14,7 +14,7 @@ BOOST_AUTO_TEST_CASE(TxUTXO)
 {
     CAmount amount = 12345;
     BlindingFactor blind;
-    Output output = Output::Create(
+    mw::Output output = mw::Output::Create(
         &blind,
         SecretKey::Random(),
         StealthAddress::Random(),
@@ -24,10 +24,10 @@ BOOST_AUTO_TEST_CASE(TxUTXO)
 
     int32_t blockHeight = 20;
     mmr::LeafIndex leafIndex = mmr::LeafIndex::At(5);
-    UTXO utxo{
+    mw::UTXO utxo{
         blockHeight,
         mmr::LeafIndex(leafIndex),
-        Output(output)
+        mw::Output(output)
     };
 
     //
@@ -39,7 +39,7 @@ BOOST_AUTO_TEST_CASE(TxUTXO)
         Deserializer deserializer(serialized);
         BOOST_REQUIRE(deserializer.Read<int32_t>() == blockHeight);
         BOOST_REQUIRE(mmr::LeafIndex::At(deserializer.Read<uint64_t>()) == leafIndex);
-        BOOST_REQUIRE(deserializer.Read<Output>() == output);
+        BOOST_REQUIRE(deserializer.Read<mw::Output>() == output);
     }
 
     //

@@ -14,12 +14,12 @@ BOOST_AUTO_TEST_CASE(MineChain)
 {
     auto pDatabase = GetDB();
 
-    auto pDBView = mw::CoinsViewDB::Open(GetDataDir(), nullptr, pDatabase);
+    auto pDBView = mw::CoinsViewDB::Open(m_path_root, nullptr, pDatabase);
     BOOST_REQUIRE(pDBView != nullptr);
 
     auto pCachedView = std::make_shared<mw::CoinsViewCache>(pDBView);
 
-    test::Miner miner(GetDataDir());
+    test::Miner miner(m_path_root);
 
     ///////////////////////
     // Mine Block 1

@@ -12,6 +12,8 @@
 #include <uint256.h>
 #include <util/hash_type.h>
 
+#include <mw/models/wallet/StealthAddress.h>
+
 #include <map>
 #include <string>
 #include <variant>
@@ -59,6 +61,8 @@ enum class TxoutType {
     WITNESS_V0_SCRIPTHASH,
     WITNESS_V0_KEYHASH,
     WITNESS_V1_TAPROOT,
+    WITNESS_MWEB_PEGIN, //!< Hash of the peg-in kernel
+    WITNESS_MWEB_HOGADDR, //!< HogAddr (first output of HogEx)
     WITNESS_UNKNOWN, //!< Only for Witness versions not already defined above
 };
 
@@ -143,10 +147,11 @@ struct WitnessUnknown
  *  * WitnessV0ScriptHash: TxoutType::WITNESS_V0_SCRIPTHASH destination (P2WSH)
  *  * WitnessV0KeyHash: TxoutType::WITNESS_V0_KEYHASH destination (P2WPKH)
  *  * WitnessV1Taproot: TxoutType::WITNESS_V1_TAPROOT destination (P2TR)
+ *  * StealthAddress: MWEB destination
  *  * WitnessUnknown: TxoutType::WITNESS_UNKNOWN destination (P2W???)
  *  A CTxDestination is the internal data type encoded in a bitcoin address
  */
-using CTxDestination = std::variant<CNoDestination, PKHash, ScriptHash, WitnessV0ScriptHash, WitnessV0KeyHash, WitnessV1Taproot, WitnessUnknown>;
+using CTxDestination = std::variant<CNoDestination, PKHash, ScriptHash, WitnessV0ScriptHash, WitnessV0KeyHash, WitnessV1Taproot, StealthAddress, WitnessUnknown>;
 
 /** Check whether a CTxDestination is a CNoDestination. */
 bool IsValidDestination(const CTxDestination& dest);
@@ -326,5 +331,11 @@ public:
  * returned, corresponding to a depth-first traversal of the script tree.
  */
 std::optional<std::vector<std::tuple<int, CScript, int>>> InferTaprootTree(const TaprootSpendData& spenddata, const XOnlyPubKey& output);
+
+// MWEB: Returns true if the GenericOutput is a peg-in output (LTC->MWEB)
+bool IsPegInOutput(const GenericOutput& output);
+
+// MWEB: Builds a segwit version 9 (MWEB) script for pegging in to an MWEB transaction with the given kernel ID.
+CScript GetScriptForPegin(const mw::Hash& kernel_id);
 
 #endif // BITCOIN_SCRIPT_STANDARD_H

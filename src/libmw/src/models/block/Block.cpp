@@ -16,7 +16,7 @@ void mw::Block::Validate() const
     MemMMR kernel_mmr;
     std::for_each(
         GetKernels().cbegin(), GetKernels().cend(),
-        [&kernel_mmr](const Kernel& kernel) { kernel_mmr.Add(kernel); }
+        [&kernel_mmr](const mw::Kernel& kernel) { kernel_mmr.Add(kernel); }
     );
     if (m_pHeader->GetKernelRoot() != kernel_mmr.Root()) {
         ThrowValidation(EConsensusError::MMR_MISMATCH);

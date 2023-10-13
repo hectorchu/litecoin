@@ -8,6 +8,7 @@
 #include <consensus/amount.h>
 #include <mw/models/block/Block.h>
 #include <mw/models/tx/Transaction.h>
+#include <mw/models/tx/MutableTx.h>
 #include <serialize.h>
 #include <tinyformat.h>
 
@@ -72,7 +73,7 @@ struct Block {
         }
 
         std::vector<mw::Hash> output_ids;
-        for (const Output& output : m_block->GetOutputs()) {
+        for (const mw::Output& output : m_block->GetOutputs()) {
             output_ids.push_back(output.GetOutputID());
         }
 
@@ -86,7 +87,7 @@ struct Block {
         }
 
         std::set<mw::Hash> kernel_ids;
-        for (const Kernel& kernel : m_block->GetKernels()) {
+        for (const mw::Kernel& kernel : m_block->GetKernels()) {
             kernel_ids.insert(kernel.GetKernelID());
         }
 
@@ -111,6 +112,8 @@ struct Tx {
     Tx() = default;
     Tx(const mw::Transaction::CPtr& tx)
         : m_transaction(tx) {}
+    Tx(const mw::MutableTx& mutable_tx)
+        : m_transaction(nullptr) { } // MW: TODO - Implement
 
     std::set<mw::Hash> GetSpentIDs() const noexcept
     {
@@ -133,11 +136,20 @@ struct Tx {
         }
 
         std::set<mw::Hash> kernel_ids;
-        for (const Kernel& kernel : m_transaction->GetKernels()) {
+        for (const mw::Kernel& kernel : m_transaction->GetKernels()) {
             kernel_ids.insert(kernel.GetKernelID());
         }
 
         return kernel_ids;
+    }
+
+    std::vector<mw::Output> GetOutputs() const noexcept
+    {
+        if (IsNull()) {
+            return std::vector<mw::Output>{};
+        }
+
+        return m_transaction->GetOutputs();
     }
 
     std::set<mw::Hash> GetOutputIDs() const noexcept
@@ -147,7 +159,7 @@ struct Tx {
         }
 
         std::set<mw::Hash> output_ids;
-        for (const Output& output : m_transaction->GetOutputs()) {
+        for (const mw::Output& output : m_transaction->GetOutputs()) {
             output_ids.insert(output.GetOutputID());
         }
 
@@ -169,10 +181,10 @@ struct Tx {
             return false;
         }
 
-        const std::vector<Kernel>& kernels = m_transaction->GetKernels();
+        const std::vector<mw::Kernel>& kernels = m_transaction->GetKernels();
         return std::any_of(
             kernels.cbegin(), kernels.cend(),
-            [](const Kernel& kernel) { return kernel.HasPegOut(); }
+            [](const mw::Kernel& kernel) { return kernel.HasPegOut(); }
         );
     }
 
@@ -200,13 +212,13 @@ struct Tx {
         return IsNull() ? 0 : m_transaction->GetLockHeight();
     }
 
-    bool GetOutput(const mw::Hash& output_id, Output& output) const noexcept
+    bool GetOutput(const mw::Hash& output_id, mw::Output& output) const noexcept
     {
         if (IsNull()) {
             return false;
         }
 
-        for (const Output& o : m_transaction->GetOutputs()) {
+        for (const mw::Output& o : m_transaction->GetOutputs()) {
             if (o.GetOutputID() == output_id) {
                 output = o;
                 return true;
@@ -214,6 +226,17 @@ struct Tx {
         }
 
         return false;
+    }
+
+    mw::MutableTx ToMutable() const noexcept
+    {
+        if (IsNull()) {
+            return mw::MutableTx{};
+        }
+
+        mw::MutableTx mutable_tx{};
+        mutable_tx.Apply(*m_transaction);
+        return mutable_tx;
     }
 
     SERIALIZE_METHODS(Tx, obj)

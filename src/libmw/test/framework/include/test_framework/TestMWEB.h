@@ -8,7 +8,7 @@ struct MWEBTestingSetup : public BasicTestingSetup {
     explicit MWEBTestingSetup()
         : BasicTestingSetup(CBaseChainParams::MAIN)
     {
-        m_db = std::make_unique<CDBWrapper>(GetDataDir() / "db", 1 << 15);
+        m_db = std::make_unique<CDBWrapper>(m_path_root / "db", 1 << 15);
         m_mweb_db = std::make_shared<MWEB::DBWrapper>(m_db.get());
     }
 

@@ -6,7 +6,7 @@
 struct CoinAction {
     bool IsSpend() const noexcept { return pUTXO == nullptr; }
 
-    UTXO::CPtr pUTXO;
+    mw::UTXO::CPtr pUTXO;
 };
 
 class CoinsViewUpdates
@@ -14,7 +14,7 @@ class CoinsViewUpdates
 public:
     CoinsViewUpdates() = default;
 
-    void AddUTXO(const UTXO::CPtr& pUTXO)
+    void AddUTXO(const mw::UTXO::CPtr& pUTXO)
     {
         AddAction(pUTXO->GetOutputID(), CoinAction{pUTXO});
     }

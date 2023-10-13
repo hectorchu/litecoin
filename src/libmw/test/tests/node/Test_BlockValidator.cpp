@@ -8,6 +8,8 @@
 #include <test_framework/TestMWEB.h>
 #include <test_framework/TxBuilder.h>
 
+using namespace mw;
+
 BOOST_FIXTURE_TEST_SUITE(TestBlockValidator, MWEBTestingSetup)
 
 // MW: TODO - Write tests for invalid blocks:
@@ -30,7 +32,7 @@ BOOST_FIXTURE_TEST_SUITE(TestBlockValidator, MWEBTestingSetup)
 
 BOOST_AUTO_TEST_CASE(BlockValidator_Test_ValidBlock)
 {
-    test::Miner miner(GetDataDir());
+    test::Miner miner(m_path_root);
 
     // Block 1 - 1 pegin & 1 pegout
     test::Tx pegin_tx = test::Tx::CreatePegIn(5'000'000);
@@ -57,7 +59,7 @@ BOOST_AUTO_TEST_CASE(BlockValidator_Test_ValidBlock)
 
 BOOST_AUTO_TEST_CASE(BlockValidator_Test_PeginMismatch)
 {
-    test::Miner miner(GetDataDir());
+    test::Miner miner(m_path_root);
 
     {
         test::Tx pegin_tx = test::Tx::CreatePegIn(5'000'000);
@@ -86,7 +88,7 @@ BOOST_AUTO_TEST_CASE(BlockValidator_Test_PeginMismatch)
 
 BOOST_AUTO_TEST_CASE(BlockValidator_Test_PegoutMismatch)
 {
-    test::Miner miner(GetDataDir());
+    test::Miner miner(m_path_root);
 
     {
         test::Tx pegin_tx = test::Tx::CreatePegIn(5'000'000);
@@ -117,7 +119,7 @@ BOOST_AUTO_TEST_CASE(BlockValidator_Test_PegoutMismatch)
 
 BOOST_AUTO_TEST_CASE(BlockValidator_Test_KernelMismatch)
 {
-    test::Miner miner(GetDataDir());
+    test::Miner miner(m_path_root);
 
     test::Tx pegin_tx = test::Tx::CreatePegIn(5'000'000);
     mw::Block::CPtr pBlock = miner.MineBlock(1, { pegin_tx }).GetBlock();
@@ -163,7 +165,7 @@ BOOST_AUTO_TEST_CASE(BlockValidator_Test_KernelMismatch)
 
 BOOST_AUTO_TEST_CASE(BlockValidator_Test_InvalidStealthExcess)
 {
-    test::Miner miner(GetDataDir());
+    test::Miner miner(m_path_root);
 
     test::Tx pegin_tx = test::Tx::CreatePegIn(5'000'000);
     mw::Block::CPtr pBlock = miner.MineBlock(1, {pegin_tx}).GetBlock();
@@ -192,7 +194,7 @@ BOOST_AUTO_TEST_CASE(BlockValidator_Test_InvalidStealthExcess)
 
 BOOST_AUTO_TEST_CASE(BlockValidator_Test_OutputSorting)
 {
-    test::Miner miner(GetDataDir());
+    test::Miner miner(m_path_root);
 
     test::Tx tx = test::TxBuilder()
         .AddPeginKernel(5'000'000)
@@ -209,8 +211,8 @@ BOOST_AUTO_TEST_CASE(BlockValidator_Test_OutputSorting)
     BOOST_CHECK(is_valid);
 
     // Swap outputs so they're no longer in order
-    std::vector<Output> outputs = pBlock->GetOutputs();
-    Output tmp = outputs[0];
+    std::vector<mw::Output> outputs = pBlock->GetOutputs();
+    mw::Output tmp = outputs[0];
     outputs[0] = outputs[1];
     outputs[1] = tmp;
 
@@ -229,7 +231,7 @@ BOOST_AUTO_TEST_CASE(BlockValidator_Test_OutputSorting)
 
 BOOST_AUTO_TEST_CASE(BlockValidator_Test_KernelSorting)
 {
-    test::Miner miner(GetDataDir());
+    test::Miner miner(m_path_root);
 
     test::Tx tx = test::TxBuilder()
         .AddPeginKernel(5'000'000)
@@ -246,8 +248,8 @@ BOOST_AUTO_TEST_CASE(BlockValidator_Test_KernelSorting)
     BOOST_CHECK(is_valid);
 
     // Swap kernels so they're no longer in order
-    std::vector<Kernel> kernels = pBlock->GetKernels();
-    Kernel tmp = kernels[0];
+    std::vector<mw::Kernel> kernels = pBlock->GetKernels();
+    mw::Kernel tmp = kernels[0];
     kernels[0] = kernels[1];
     kernels[1] = tmp;
 

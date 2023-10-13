@@ -17,7 +17,7 @@ class Deserializer
 {
 public:
     Deserializer(std::vector<uint8_t> bytes)
-        : m_bytes(std::move(bytes)), m_reader(SER_NETWORK, PROTOCOL_VERSION, m_bytes, 0) {}
+        : m_bytes(std::move(bytes)), m_reader(SER_NETWORK, PROTOCOL_VERSION, Span{m_bytes}) {}
 
     template <class T, typename SFINAE = std::enable_if_t<std::is_integral<T>::value || std::is_base_of<Traits::ISerializable, T>::value>>
     T Read()

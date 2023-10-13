@@ -1,11 +1,11 @@
 #pragma once
 
+#include <crypto/siphash.h>
 #include <mw/common/Traits.h>
 #include <mw/crypto/Hasher.h>
 #include <mw/models/crypto/Hash.h>
 #include <mw/models/crypto/PublicKey.h>
 #include <mw/models/crypto/Signature.h>
-#include <boost/functional/hash.hpp>
 
 /// <summary>
 /// Contains a hashed message, a signature of that message, and the public key it was signed for.
@@ -64,9 +64,12 @@ namespace std
     template<>
     struct hash<SignedMessage>
     {
-        size_t operator()(const SignedMessage& hash) const
+        size_t operator()(const SignedMessage& msg) const
         {
-            return boost::hash_value(hash.Serialized());
+            CSipHasher hasher(0, 0);
+            mw::Hash hash = msg.GetHash();
+            hasher.Write(hash.data(), hash.size());
+            return static_cast<size_t>(hasher.Finalize());
         }
     };
 }

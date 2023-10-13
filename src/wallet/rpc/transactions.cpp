@@ -104,7 +104,7 @@ static UniValue ListReceived(const CWallet& wallet, const UniValue& params, cons
 
         // Coinbase with less than 1 confirmation is no longer in the main chain
         if ((wtx.IsCoinBase() && (nDepth < 1))
-            || (wallet.IsTxImmatureCoinBase(wtx) && !include_immature_coinbase)) {
+            || (wallet.IsTxImmature(wtx) && !include_immature_coinbase)) {
             continue;
         }
 
@@ -344,7 +344,13 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
             if (address_book_entry) {
                 entry.pushKV("label", address_book_entry->GetLabel());
             }
-            entry.pushKV("vout", s.vout);
+
+            if (s.output_id.IsOutPoint()) {
+                entry.pushKV("vout", (int)s.output_id.ToOutPoint().n);
+            } else if (!s.output_id.ToMWEB().IsZero()) { // MW: TODO - When would this be Zero?
+                entry.pushKV("mweb_out", s.output_id.ToMWEB().ToHex());
+            }
+
             entry.pushKV("fee", ValueFromAmount(-nFee));
             if (fLong)
                 WalletTxToJSON(wallet, wtx, entry);
@@ -370,15 +376,21 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
                 entry.pushKV("involvesWatchonly", true);
             }
             MaybePushAddress(entry, r.destination);
-            PushParentDescriptors(wallet, wtx.tx->vout.at(r.vout).scriptPubKey, entry);
-            if (wtx.IsCoinBase())
+
+            GenericAddress dest_addr;
+            if (wallet.ExtractDestinationScript(wtx.tx->GetOutput(r.output_id), dest_addr)) {
+                PushParentDescriptors(wallet, dest_addr, entry);
+            }
+            if (wtx.IsCoinBase() || wtx.IsHogEx())
             {
                 if (wallet.GetTxDepthInMainChain(wtx) < 1)
                     entry.pushKV("category", "orphan");
-                else if (wallet.IsTxImmatureCoinBase(wtx))
+                else if (wallet.IsTxImmature(wtx))
                     entry.pushKV("category", "immature");
-                else
+                else if (wtx.IsCoinBase())
                     entry.pushKV("category", "generate");
+                else
+                    entry.pushKV("category", "hogex");
             }
             else
             {
@@ -388,7 +400,13 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
             if (address_book_entry) {
                 entry.pushKV("label", label);
             }
-            entry.pushKV("vout", r.vout);
+            
+            if (r.output_id.IsOutPoint()) {
+                entry.pushKV("vout", (int)r.output_id.ToOutPoint().n);
+            } else {
+                entry.pushKV("mweb_out", r.output_id.ToMWEB().ToHex());
+            }
+
             if (fLong)
                 WalletTxToJSON(wallet, wtx, entry);
             ret.push_back(entry);
@@ -714,7 +732,8 @@ RPCHelpMan gettransaction()
                                     "\"orphan\"                Orphaned coinbase transactions received."},
                                 {RPCResult::Type::STR_AMOUNT, "amount", "The amount in " + CURRENCY_UNIT},
                                 {RPCResult::Type::STR, "label", /*optional=*/true, "A comment for the address/transaction, if any"},
-                                {RPCResult::Type::NUM, "vout", "the vout value"},
+                                {RPCResult::Type::NUM, "vout", /*optional=*/true, "the vout value"},
+                                {RPCResult::Type::STR_HEX, "mweb_out", /*optional=*/true, "the MWEB output commitment"},
                                 {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the \n"
                                     "'send' category of transactions."},
                                 {RPCResult::Type::BOOL, "abandoned", /*optional=*/true, "'true' if the transaction has been abandoned (inputs are respendable). Only available for the \n"

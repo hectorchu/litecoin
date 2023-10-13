@@ -2,6 +2,8 @@
 #include <mw/crypto/Schnorr.h>
 #include <mw/crypto/SecretKeys.h>
 
+MW_NAMESPACE
+
 Kernel Kernel::Create(
     const BlindingFactor& blind,
     const std::optional<SecretKey>& stealth_blind,
@@ -123,3 +125,5 @@ mw::Hash Kernel::GetSignatureMessage(
 
     return s.hash();
 }
+
+END_NAMESPACE

@@ -72,19 +72,19 @@ public:
     }
 
 private:
-    IMMR::Ptr GetKernelMMR(const std::vector<Kernel>& tx_kernels)
+    IMMR::Ptr GetKernelMMR(const std::vector<mw::Kernel>& tx_kernels)
     {
         MemMMR::Ptr pKernelMMR = std::make_shared<MemMMR>();
-        for (const Kernel& kernel : tx_kernels) {
+        for (const mw::Kernel& kernel : tx_kernels) {
             pKernelMMR->Add(kernel.Serialized());
         }
 
         return pKernelMMR;
     }
 
-    IMMR::Ptr GetOutputMMR(const std::vector<Output>& additionalOutputs = {})
+    IMMR::Ptr GetOutputMMR(const std::vector<mw::Output>& additionalOutputs = {})
     {
-        std::vector<Output> outputs;
+        std::vector<mw::Output> outputs;
         for (const auto& block : m_blocks) {
             const auto& blockOutputs = block.GetBlock()->GetOutputs();
             std::copy(blockOutputs.cbegin(), blockOutputs.cend(), std::back_inserter(outputs));
@@ -93,14 +93,14 @@ private:
         std::copy(additionalOutputs.cbegin(), additionalOutputs.cend(), std::back_inserter(outputs));
 
         MemMMR::Ptr pOutputMMR = std::make_shared<MemMMR>();
-        for (const Output& output : outputs) {
+        for (const mw::Output& output : outputs) {
             pOutputMMR->Add(output.GetOutputID());
         }
 
         return pOutputMMR;
     }
 
-    TestLeafSet::Ptr GetLeafSet(const std::vector<Input>& additionalInputs = {}, const std::vector<Output>& additionalOutputs = {})
+    TestLeafSet::Ptr GetLeafSet(const std::vector<Input>& additionalInputs = {}, const std::vector<mw::Output>& additionalOutputs = {})
     {
         std::vector<TestLeafSet::BlockInfo> blockInfos;
         for (const MinedBlock& block : m_blocks) {
@@ -109,7 +109,7 @@ private:
                 blockInfo.inputs.push_back(input.GetCommitment());
             }
 
-            for (const Output& output : block.GetBlock()->GetOutputs()) {
+            for (const mw::Output& output : block.GetBlock()->GetOutputs()) {
                 blockInfo.outputs.push_back(output.GetCommitment());
             }
 
@@ -121,7 +121,7 @@ private:
             blockInfo.inputs.push_back(input.GetCommitment());
         }
 
-        for (const Output& output : additionalOutputs) {
+        for (const mw::Output& output : additionalOutputs) {
             blockInfo.outputs.push_back(output.GetCommitment());
         }
 

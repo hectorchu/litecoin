@@ -5,6 +5,8 @@
 #include <mw/exceptions/InsufficientFundsException.h>
 #include <numeric>
 
+using mw::TxBuilder;
+
 mw::Transaction::CPtr TxBuilder::BuildTx(
     const std::vector<mw::Coin>& input_coins,
     const std::vector<mw::Recipient>& recipients,
@@ -37,14 +39,17 @@ mw::Transaction::CPtr TxBuilder::BuildTx(
     }
 
     // Sign inputs
+    LOG_INFO("Creating inputs");
     TxBuilder::Inputs inputs = CreateInputs(input_coins);
 
     // Create outputs
+    LOG_INFO("Creating outputs");
     TxBuilder::Outputs outputs = CreateOutputs(recipients);
     output_coins = outputs.coins;
 
     // Total kernel offset is split between raw kernel_offset and the kernel's blinding factor.
     // sum(output.blind) - sum(input.blind) = kernel_offset + sum(kernel.blind)
+    LOG_INFO("Calculating kernel blind");
     BlindingFactor kernel_offset = BlindingFactor::Random();
     BlindingFactor kernel_blind = Blinds()
         .Add(outputs.total_blind)
@@ -56,7 +61,8 @@ mw::Transaction::CPtr TxBuilder::BuildTx(
     SecretKey stealth_blind = SecretKey::Random();
 
     // Create the kernel
-    Kernel kernel = Kernel::Create(
+    LOG_INFO("Creating kernel");
+    mw::Kernel kernel = mw::Kernel::Create(
         kernel_blind,
         std::make_optional(stealth_blind),
         fee,
@@ -73,12 +79,13 @@ mw::Transaction::CPtr TxBuilder::BuildTx(
         .Total();
 
     // Build the transaction
+    LOG_INFO("Creating tx");
     return mw::Transaction::Create(
         std::move(kernel_offset),
         std::move(stealth_offset),
         std::move(inputs.inputs),
         std::move(outputs.outputs),
-        std::vector<Kernel>{ std::move(kernel) }
+        std::vector<mw::Kernel>{std::move(kernel)}
     );
 }
 
@@ -120,18 +127,20 @@ TxBuilder::Outputs TxBuilder::CreateOutputs(const std::vector<mw::Recipient>& re
 {
     Blinds output_blinds;
     Blinds output_keys;
-    std::vector<Output> outputs;
+    std::vector<mw::Output> outputs;
     std::vector<mw::Coin> coins;
 
     for (const mw::Recipient& recipient : recipients) {
         BlindingFactor raw_blind;
         SecretKey ephemeral_key = SecretKey::Random();
-        Output output = Output::Create(
+        LOG_INFO("Creating output");
+        mw::Output output = mw::Output::Create(
             &raw_blind,
             ephemeral_key,
             recipient.address,
             recipient.amount
         );
+        LOG_INFO("Output created");
 
         output_blinds.Add(Pedersen::BlindSwitch(raw_blind, recipient.amount));
         output_keys.Add(ephemeral_key);

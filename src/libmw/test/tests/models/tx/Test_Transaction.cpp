@@ -32,7 +32,7 @@ BOOST_AUTO_TEST_CASE(TxTransaction)
         Deserializer deserializer(serialized);
         BOOST_REQUIRE(deserializer.Read<BlindingFactor>() == tx->GetKernelOffset());
         BOOST_REQUIRE(deserializer.Read<BlindingFactor>() == tx->GetStealthOffset());
-        BOOST_REQUIRE(deserializer.Read<TxBody>() == tx->GetBody());
+        BOOST_REQUIRE(deserializer.Read<mw::TxBody>() == tx->GetBody());
 
         Deserializer deserializer2(serialized);
         BOOST_REQUIRE(*tx == deserializer2.Read<mw::Transaction>());

@@ -129,7 +129,7 @@ RangeProof::CPtr Bulletproofs::Generate(
         extraData.size(),
         proofMessage.data()
     );
-    secp256k1_scratch_space_destroy(BP_CONTEXT.Read()->Get(), pScratchSpace);
+    secp256k1_scratch_space_destroy(pContext, pScratchSpace);
 
     if (result != 1) {
         ThrowCrypto_F("secp256k1_bulletproof_rangeproof_prove failed with error: {}", result);

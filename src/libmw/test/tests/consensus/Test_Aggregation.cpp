@@ -7,6 +7,8 @@
 #include <test_framework/TestMWEB.h>
 #include <test_framework/TxBuilder.h>
 
+using namespace mw;
+
 BOOST_FIXTURE_TEST_SUITE(TestAggregation, MWEBTestingSetup)
 
 BOOST_AUTO_TEST_CASE(Aggregate)
@@ -32,13 +34,13 @@ BOOST_AUTO_TEST_CASE(Aggregate)
     BOOST_REQUIRE(pAggregated->GetInputs().size() == 3);
     BOOST_REQUIRE(pAggregated->GetInputs() == inputs);
 
-    std::vector<Output> outputs = tx1->GetOutputs();
+    std::vector<mw::Output> outputs = tx1->GetOutputs();
     outputs.insert(outputs.end(), tx2->GetOutputs().begin(), tx2->GetOutputs().end());
     std::sort(outputs.begin(), outputs.end(), OutputSort);
     BOOST_REQUIRE(pAggregated->GetOutputs().size() == 2);
     BOOST_REQUIRE(pAggregated->GetOutputs() == outputs);
 
-    std::vector<Kernel> kernels = tx1->GetKernels();
+    std::vector<mw::Kernel> kernels = tx1->GetKernels();
     kernels.insert(kernels.end(), tx2->GetKernels().begin(), tx2->GetKernels().end());
     std::sort(kernels.begin(), kernels.end(), KernelSort);
     BOOST_REQUIRE(pAggregated->GetKernels().size() == 2);

@@ -38,7 +38,7 @@ static mmr::Leaf DeterministicLeaf(const uint64_t i)
 static MMRWithLeafset BuildDetermininisticMMR(const uint64_t num_leaves)
 {
     auto mmr = std::make_shared<MemMMR>();
-    auto leafset = LeafSet::Open(GetDataDir(), 0);
+    auto leafset = LeafSet::Open(m_path_root, 0);
     for (size_t i = 0; i < num_leaves; i++) {
         mmr->AddLeaf(DeterministicLeaf(i));
         leafset->Add(mmr::LeafIndex::At(i));

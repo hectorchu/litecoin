@@ -135,6 +135,27 @@ SECP256K1_API int secp256k1_schnorrsig_sign(
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4)
   SECP256K1_DEPRECATED("Use secp256k1_schnorrsig_sign32 instead");
 
+/** Create a Schnorr signature.
+ *
+ * Returns 1 on success, 0 on failure.
+ *  Args:    ctx: pointer to a context object, initialized for signing (cannot be NULL)
+ *  Out:     sig: pointer to the returned signature (cannot be NULL)
+ *       nonce_is_negated: a pointer to an integer indicates if signing algorithm negated the
+ *                nonce (can be NULL)
+ *  In:    msg32: the 32-byte message hash being signed (cannot be NULL)
+ *        seckey: pointer to a 32-byte secret key (cannot be NULL)
+ *       noncefp: pointer to a nonce generation function. If NULL, secp256k1_nonce_function_bipschnorr is used
+ *         ndata: pointer to arbitrary data used by the nonce generation function (can be NULL)
+ */
+SECP256K1_API int secp256k1_schnorrsig_sign_mweb(
+    const secp256k1_context* ctx,
+    unsigned char* sig,
+    int* nonce_is_negated,
+    const unsigned char* msg32,
+    const unsigned char* seckey,
+    secp256k1_nonce_function noncefp,
+    void* ndata) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
+
 /** Create a Schnorr signature with a more flexible API.
  *
  *  Same arguments as secp256k1_schnorrsig_sign except that it allows signing

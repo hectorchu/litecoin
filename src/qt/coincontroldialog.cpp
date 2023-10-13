@@ -373,7 +373,7 @@ void CoinControlDialog::viewItemChanged(QTreeWidgetItem* item, int column)
 // shows count of locked unspent outputs
 void CoinControlDialog::updateLabelLocked()
 {
-    std::vector<COutPoint> vOutpts;
+    std::vector<GenericOutputID> vOutpts;
     model->wallet().listLockedCoins(vOutpts);
     if (vOutpts.size() > 0)
     {
@@ -412,7 +412,7 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
     unsigned int nQuantity      = 0;
     bool fWitness               = false;
 
-    std::vector<COutPoint> vCoinControl;
+    std::vector<GenericOutputID> vCoinControl;
     m_coin_control.ListSelected(vCoinControl);
 
     size_t i = 0;
@@ -421,7 +421,7 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
 
         // unselect already spent, very unlikely scenario, this could happen
         // when selected are spent elsewhere, like rpc or another computer
-        const COutPoint& outpt = vCoinControl[i++];
+        const GenericOutputID& outpt = vCoinControl[i++];
         if (out.is_spent)
         {
             m_coin_control.UnSelect(outpt);
@@ -477,7 +477,7 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
                 nBytes -= 34;
 
         // Fee
-        nPayFee = model->wallet().getMinimumFee(nBytes, m_coin_control, nullptr /* returned_target */, nullptr /* reason */);
+        nPayFee = model->wallet().getMinimumFee(nBytes, 0, m_coin_control, nullptr /* returned_target */, nullptr /* reason */);
 
         if (nPayAmount > 0)
         {

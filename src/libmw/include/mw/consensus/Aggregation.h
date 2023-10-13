@@ -21,8 +21,8 @@ public:
         }
 
         std::vector<Input> inputs;
-        std::vector<Output> outputs;
-        std::vector<Kernel> kernels;
+        std::vector<mw::Output> outputs;
+        std::vector<mw::Kernel> kernels;
         std::vector<BlindingFactor> kernel_offsets;
         std::vector<BlindingFactor> stealth_offsets;
 

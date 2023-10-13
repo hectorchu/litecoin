@@ -17,6 +17,8 @@
 #include <memory>
 #include <vector>
 
+MW_NAMESPACE
+
 ////////////////////////////////////////
 // TRANSACTION BODY - Container for all inputs, outputs, and kernels in a transaction or block.
 ////////////////////////////////////////
@@ -28,7 +30,7 @@ public:
     //
     // Constructors
     //
-    TxBody(std::vector<Input> inputs, std::vector<Output> outputs, std::vector<Kernel> kernels)
+    TxBody(std::vector<Input> inputs, std::vector<mw::Output> outputs, std::vector<mw::Kernel> kernels)
         : m_inputs(std::move(inputs)), m_outputs(std::move(outputs)), m_kernels(std::move(kernels)) { }
     TxBody(const TxBody& other) = default;
     TxBody(TxBody&& other) noexcept = default;
@@ -57,8 +59,8 @@ public:
     // Getters
     //
     const std::vector<Input>& GetInputs() const noexcept { return m_inputs; }
-    const std::vector<Output>& GetOutputs() const noexcept { return m_outputs; }
-    const std::vector<Kernel>& GetKernels() const noexcept { return m_kernels; }
+    const std::vector<mw::Output>& GetOutputs() const noexcept { return m_outputs; }
+    const std::vector<mw::Kernel>& GetKernels() const noexcept { return m_kernels; }
 
     std::vector<Commitment> GetKernelCommits() const noexcept { return Commitments::From(m_kernels); }
     std::vector<Commitment> GetInputCommits() const noexcept { return Commitments::From(m_inputs); }
@@ -78,7 +80,7 @@ public:
 
     std::vector<PublicKey> GetStealthExcesses() const noexcept {
         std::vector<PublicKey> stealth_excesses;
-        for (const Kernel& kernel : m_kernels) {
+        for (const mw::Kernel& kernel : m_kernels) {
             if (kernel.HasStealthExcess()) {
                 stealth_excesses.push_back(kernel.GetStealthExcess());
             }
@@ -109,8 +111,10 @@ private:
     std::vector<Input> m_inputs;
 
     // List of outputs the transaction produces.
-    std::vector<Output> m_outputs;
+    std::vector<mw::Output> m_outputs;
 
     // List of kernels that make up this transaction.
-    std::vector<Kernel> m_kernels;
+    std::vector<mw::Kernel> m_kernels;
 };
+
+END_NAMESPACE
