@@ -11,9 +11,9 @@ Transaction::CPtr Transaction::Create(
     std::vector<mw::Output> outputs,
     std::vector<mw::Kernel> kernels)
 {
-    std::sort(inputs.begin(), inputs.end(), InputSort);
-    std::sort(outputs.begin(), outputs.end(), OutputSort);
-    std::sort(kernels.begin(), kernels.end(), KernelSort);
+    std::sort(inputs.begin(), inputs.end(), InputSort());
+    std::sort(outputs.begin(), outputs.end(), OutputSort());
+    std::sort(kernels.begin(), kernels.end(), KernelSort());
 
     return std::make_shared<mw::Transaction>(
         std::move(kernel_offset),

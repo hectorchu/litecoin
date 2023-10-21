@@ -226,12 +226,12 @@ private:
 };
 
 // Sorts by output ID (hash)
-static const struct
+struct OutputSort
 {
     bool operator()(const Output& a, const Output& b) const
     {
         return a.GetOutputID() < b.GetOutputID();
     }
-} OutputSort;
+};
 
 END_NAMESPACE

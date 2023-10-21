@@ -2083,7 +2083,7 @@ std::optional<MigrationData> LegacyScriptPubKeyMan::MigrateToDescriptor()
     }
 
     LogPrintf("Keys remaining in spks: %u\n", spks.size());
-    for (const auto spk : spks) {
+    for (const auto& spk : spks) {
         LogPrintf("SPK: %s, %s\n", spk.Encode(), CScriptID(spk.GetScript()).ToString());
     }
 

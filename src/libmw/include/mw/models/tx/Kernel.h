@@ -20,7 +20,7 @@ class Kernel :
     public Traits::IHashable,
     public Traits::ISerializable
 {
-    friend class MutableKernel;
+    friend struct MutableKernel;
 
 public:
     Kernel() = default;
@@ -223,7 +223,7 @@ private:
 END_NAMESPACE
 
 // Sorts by net supply increase [pegin - (fee + pegout)] with highest increase first, then sorts by hash.
-static const struct
+struct KernelSort
 {
     bool operator()(const mw::Kernel& a, const mw::Kernel& b) const
     {
@@ -231,4 +231,4 @@ static const struct
         CAmount b_pegin = b.GetSupplyChange();
         return (a_pegin > b_pegin) || (a_pegin == b_pegin && a.GetHash() < b.GetHash());
     }
-} KernelSort;
+};

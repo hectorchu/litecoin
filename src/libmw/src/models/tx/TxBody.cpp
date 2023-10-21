@@ -71,9 +71,9 @@ void TxBody::Validate() const
     }
 
     // Verify inputs, outputs, kernels, and owner signatures are sorted
-    if (!std::is_sorted(m_inputs.cbegin(), m_inputs.cend(), InputSort)
-        || !std::is_sorted(m_outputs.cbegin(), m_outputs.cend(), OutputSort)
-        || !std::is_sorted(m_kernels.cbegin(), m_kernels.cend(), KernelSort))
+    if (!std::is_sorted(m_inputs.cbegin(), m_inputs.cend(), InputSort())
+        || !std::is_sorted(m_outputs.cbegin(), m_outputs.cend(), OutputSort())
+        || !std::is_sorted(m_kernels.cbegin(), m_kernels.cend(), KernelSort()))
     {
         ThrowValidation(EConsensusError::NOT_SORTED);
     }

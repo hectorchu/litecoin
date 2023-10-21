@@ -477,7 +477,7 @@ std::optional<util::Error> TxBuilder::AddMWEBTx()
 
     // Update change position
     if (m_change.change_position.IsMWEB()) {
-        for (const std::pair<mw::Hash, mw::Coin>& entry : sign_tx_result->coins_by_output_id) {
+        for (const auto& entry : sign_tx_result->coins_by_output_id) {
             const mw::Coin& output_coin = entry.second;
             if (output_coin.address.has_value() && *output_coin.address == m_change.script_or_address.GetMWEBAddress()) {
                 m_change.change_position = output_coin.output_id;

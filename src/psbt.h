@@ -1724,7 +1724,7 @@ struct PSBTKernel
                     } else if (key.size() != 1) {
                         throw std::ios_base::failure("Kernel stealth commitment is more than one byte type");
                     }
-                    Commitment v;
+                    PublicKey v;
                     UnserializeFromVector(s, v);
                     stealth_commit = v;
                     break;

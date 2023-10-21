@@ -15,7 +15,6 @@
 #include <cstdarg>
 #include <vector>
 #include <locale>
-#include <codecvt>
 #include <algorithm>
 #include <system_error>
 
@@ -87,18 +86,6 @@ public:
         return output;
     }
 
-    static std::string ToUTF8(const std::wstring& wstr)
-    {
-        std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
-        return converter.to_bytes(wstr);
-    }
-
-    static std::wstring ToWide(const std::string& str)
-    {
-        std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-        return converter.from_bytes(str);
-    }
-
     static std::string Trim(const std::string& s)
     {
         std::string copy = s;
@@ -125,11 +112,6 @@ private:
     static std::string ConvertArg(const char* x)
     {
         return std::string(x);
-    }
-
-    static std::string ConvertArg(const std::wstring& x)
-    {
-        return StringUtil::ToUTF8(x);
     }
 
     static std::string ConvertArg(const Traits::IPrintable& x)
