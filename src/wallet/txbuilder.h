@@ -8,6 +8,7 @@
 #include <wallet/coincontrol.h>
 #include <wallet/recipient.h>
 #include <wallet/reserve.h>
+#include <wallet/spend.h>
 #include <wallet/utxo.h>
 
 namespace wallet {
@@ -65,6 +66,10 @@ private:
 
     // The fee to be paid on the LTC side
     util::Result<CAmount> CalcLTCFee(const CFeeRate& fee_rate) const;
+
+    // The fee to be paid on the MWEB side.
+    // This includes all MWEB inputs, outputs, and kernels, as well as any HogEx outputs for pegouts.
+    CAmount CalcMWEBFee(const CFeeRate& feeRate) const noexcept;
 
     util::Result<size_t> CalcMaxSignedTxBytes(const CMutableTransaction& tx) const;
 };

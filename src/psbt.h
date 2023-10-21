@@ -14,6 +14,7 @@
 #include <script/signingprovider.h>
 #include <span.h>
 #include <streams.h>
+#include <util/result.h>
 
 #include <bitset>
 #include <optional>
@@ -294,6 +295,7 @@ struct PSBTInput
     }
 
     bool IsNull() const;
+    bool IsMWEB() const noexcept { return mweb_output_id.has_value(); }
     void FillSignatureData(SignatureData& sigdata) const;
     void FromSignatureData(const SignatureData& sigdata);
     void Merge(const PSBTInput& input);
@@ -1136,7 +1138,7 @@ struct PSBTOutput
     std::optional<uint8_t> mweb_view_tag;
     std::optional<uint64_t> mweb_enc_value;
     std::optional<BigInt<16>> mweb_enc_nonce;
-    std::optional<RangeProof> mweb_rangeproof;
+    std::optional<RangeProof::CPtr> mweb_rangeproof;
     std::optional<Signature> mweb_sig;
 
     std::map<std::vector<unsigned char>, std::vector<unsigned char>> unknown;
@@ -1145,6 +1147,7 @@ struct PSBTOutput
     uint32_t m_psbt_version;
 
     bool IsNull() const;
+    bool IsMWEB() const noexcept { return mweb_stealth_address.has_value() || mweb_commit.has_value(); }
     void FillSignatureData(SignatureData& sigdata) const;
     void FromSignatureData(const SignatureData& sigdata);
     void Merge(const PSBTOutput& output);
@@ -1254,7 +1257,7 @@ struct PSBTOutput
         }
         if (mweb_rangeproof != std::nullopt) {
             SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_RANGEPROOF));
-            SerializeToVector(s, *mweb_rangeproof);
+            SerializeToVector(s, *mweb_rangeproof.value());
         }
         if (mweb_sig != std::nullopt) {
             SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_SIG));
@@ -1552,7 +1555,7 @@ struct PSBTOutput
                     }
                     RangeProof v;
                     UnserializeFromVector(s, v);
-                    mweb_rangeproof = v;
+                    mweb_rangeproof = std::make_shared<RangeProof>(std::move(v));
                     break;
                 }
                 case PSBT_OUT_MWEB_SIG:
@@ -1622,7 +1625,7 @@ struct PSBTOutput
 struct PSBTKernel
 {
     std::optional<Commitment> commit;
-    std::optional<Commitment> stealth_commit;
+    std::optional<PublicKey> stealth_commit;
     std::optional<CAmount> fee;
     std::optional<CAmount> pegin_amount;
     std::vector<PegOutCoin> pegouts;
@@ -2309,18 +2312,9 @@ void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransactio
  * Finalizes a PSBT if possible, combining partial signatures.
  *
  * @param[in,out] psbtx PartiallySignedTransaction to finalize
- * return True if the PSBT is now complete, false otherwise
+ * return The finalized CMutableTransaction if the PSBT is now complete. error otherwise
  */
-bool FinalizePSBT(PartiallySignedTransaction& psbtx);
-
-/**
- * Finalizes a PSBT if possible, and extracts it to a CMutableTransaction if it could be finalized.
- *
- * @param[in]  psbtx PartiallySignedTransaction
- * @param[out] result CMutableTransaction representing the complete transaction, if successful
- * @return True if we successfully extracted the transaction, false otherwise
- */
-bool FinalizeAndExtractPSBT(PartiallySignedTransaction& psbtx, CMutableTransaction& result);
+util::Result<CMutableTransaction> FinalizePSBT(PartiallySignedTransaction& psbtx);
 
 /**
  * Combines PSBTs with the same underlying transaction, resulting in a single PSBT with all partial signatures from each input.

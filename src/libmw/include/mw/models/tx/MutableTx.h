@@ -2,7 +2,6 @@
 
 #include <mw/models/tx/Transaction.h>
 #include <mw/models/wallet/StealthAddress.h>
-#include <wallet/recipient.h>
 #include <optional>
 
 MW_NAMESPACE
@@ -97,7 +96,9 @@ struct MutableOutput {
     std::optional<RangeProof::CPtr> proof{};
     std::optional<Signature> signature{};
 
-    std::optional<wallet::CRecipient> recipient{};
+    std::optional<CAmount> amount{};
+    std::optional<StealthAddress> address{};
+    std::optional<bool> subtract_fee_from_amount{};
     // MW: TODO - Include generated secrets
 
     bool operator==(const MutableOutput& other) const noexcept
@@ -109,7 +110,9 @@ struct MutableOutput {
                message == other.message &&
                proof == other.proof &&
                signature == other.signature &&
-               recipient == other.recipient;
+               amount == other.amount &&
+               address == other.address &&
+               subtract_fee_from_amount == other.subtract_fee_from_amount;
     }
 
     // A finalized MutableOutput is one that has all public fields populated
@@ -147,11 +150,23 @@ struct MutableOutput {
     }
 };
 
+struct PegOutRecipient
+{
+    CScript script;
+    CAmount nAmount;
+    bool fSubtractFeeFromAmount;
+
+    bool operator==(const PegOutRecipient& rhs) const noexcept
+    {
+        return script == rhs.script && nAmount == rhs.nAmount && fSubtractFeeFromAmount == rhs.fSubtractFeeFromAmount;
+    }
+};
+
 struct MutableKernel {
     std::optional<uint8_t> features;
     std::optional<CAmount> fee;
     std::optional<CAmount> pegin;
-    std::vector<wallet::CRecipient> pegouts;
+    std::vector<PegOutRecipient> pegouts;
     std::optional<int32_t> lock_height;
     std::optional<PublicKey> stealth_excess;
     std::vector<uint8_t> extradata;
@@ -192,18 +207,20 @@ struct MutableKernel {
         return std::nullopt;
     }
 
+    void SetPegOuts(const std::vector<PegOutCoin>& pegout_coins) {
+        pegouts.clear();
+        for (const PegOutCoin& pegout_coin : pegout_coins) {
+            pegouts.push_back(PegOutRecipient{pegout_coin.GetScriptPubKey(), pegout_coin.GetAmount(), false});
+        }
+    }
+
     // Updates the public fields of the MutableKernel to their finalized values.
     void Update(const mw::Kernel& finalized) noexcept
     {
         features = finalized.m_features;
         fee = finalized.m_fee;
         pegin = finalized.m_pegin;
-
-        pegouts.clear();
-        for (const PegOutCoin& pegout : finalized.m_pegouts) {
-            pegouts.push_back(wallet::CRecipient{pegout.GetScriptPubKey(), pegout.GetAmount(), false});
-        }
-
+        SetPegOuts(finalized.m_pegouts);
         lock_height = finalized.m_lockHeight;
         stealth_excess = finalized.m_stealthExcess;
         extradata = finalized.m_extraData;
@@ -225,8 +242,8 @@ struct MutableKernel {
     std::vector<PegOutCoin> GetPegOuts() const noexcept
     {
         std::vector<PegOutCoin> pegouts_;
-        for (const wallet::CRecipient& pegout : pegouts) {
-            pegouts_.push_back(PegOutCoin{pegout.nAmount, pegout.GetScript()});
+        for (const PegOutRecipient& pegout : pegouts) {
+            pegouts_.push_back(PegOutCoin{pegout.nAmount, pegout.script});
         }
         return pegouts_;
     }
@@ -239,6 +256,15 @@ struct MutableTx : public Traits::ISerializable
     std::vector<MutableInput> inputs;
     std::vector<MutableOutput> outputs;
     std::vector<MutableKernel> kernels; // MW: TODO - Just store fee, pegins, and pegouts here, rather than having mutable kernels?
+
+    void SetFee(const CAmount fee) noexcept
+    {
+        if (kernels.empty()) {
+            kernels.push_back(mw::MutableKernel{});
+        }
+
+        kernels.front().fee = fee;
+    }
 
     std::optional<CAmount> GetPeginAmount() const noexcept
     {
@@ -258,7 +284,7 @@ struct MutableTx : public Traits::ISerializable
         kernels.front().pegin = pegin_amount;
     }
 
-    void AddPegout(const wallet::CRecipient& pegout_recipient)
+    void AddPegout(const PegOutRecipient& pegout_recipient)
     {
         if (kernels.empty()) {
             kernels.push_back(mw::MutableKernel{});
@@ -267,9 +293,14 @@ struct MutableTx : public Traits::ISerializable
         kernels.front().pegouts.push_back(pegout_recipient);
     }
 
-    std::vector<wallet::CRecipient> GetPegouts() const noexcept
+    void AddPegout(CScript script, const CAmount amount, bool subtract_fee_from_amount)
     {
-        std::vector<wallet::CRecipient> pegouts;
+        AddPegout(PegOutRecipient{std::move(script), amount, subtract_fee_from_amount});
+    }
+
+    std::vector<PegOutRecipient> GetPegouts() const noexcept
+    {
+        std::vector<PegOutRecipient> pegouts;
         for (const MutableKernel& kernel : kernels) {
             pegouts.insert(pegouts.end(), kernel.pegouts.begin(), kernel.pegouts.end());
         }
@@ -303,6 +334,67 @@ struct MutableTx : public Traits::ISerializable
         kernels.clear();
     }
 
+    bool IsFinal() const noexcept
+    {
+        if (kernels.empty()) {
+            LOG_INFO("Not final - kernels empty");
+            return false;
+        }
+
+        for (const mw::MutableInput& input : inputs) {
+            if (!input.IsFinal()) {
+                LOG_INFO("Not final - Non-final input");
+                return false;
+            }
+        }
+
+        for (const mw::MutableOutput& output : outputs) {
+            if (!output.IsFinal()) {
+                LOG_INFO("Not final - Non-final output");
+                return false;
+            }
+        }
+
+        for (const mw::MutableKernel& kernel : kernels) {
+            if (!kernel.IsFinal()) {
+                LOG_INFO("Not final - Non-final kernel");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    std::optional<mw::Transaction::CPtr> Finalized() const noexcept
+    {
+        if (IsNull() || !IsFinal()) {
+            return std::nullopt;
+        }
+
+        std::vector<Input> final_inputs;
+        for (const mw::MutableInput& input : inputs) {
+            final_inputs.push_back(*input.Finalized());
+        }
+
+        std::vector<Output> final_outputs;
+        for (const mw::MutableOutput& output : outputs) {
+            final_outputs.push_back(*output.Finalized());
+        }
+
+        std::vector<Kernel> final_kernels;
+        for (const mw::MutableKernel& kernel : kernels) {
+            final_kernels.push_back(*kernel.Finalized());
+        }
+
+        return mw::Transaction::Create(
+            kernel_offset,
+            stealth_offset,
+            std::move(final_inputs),
+            std::move(final_outputs),
+            std::move(final_kernels)
+        );
+    }
+
     std::vector<PegInCoin> GetPegIns() const noexcept
     {
         std::vector<PegInCoin> pegins;
@@ -320,8 +412,8 @@ struct MutableTx : public Traits::ISerializable
     {
         std::vector<PegOutCoin> pegout_coins;
         for (const MutableKernel& kernel : kernels) {
-            for (const PegOutCoin& pegout_coin : kernel.pegouts) {
-                pegout_coins.push_back(pegout_coin);
+            for (const PegOutRecipient& pegout : kernel.pegouts) {
+                pegout_coins.push_back(PegOutCoin{pegout.nAmount, pegout.script});
             }
         }
 

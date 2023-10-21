@@ -95,7 +95,7 @@ RawTransaction RawTransaction::FromRPC(const UniValue& inputs_in, const UniValue
 
     // Duplicate checking
     std::set<CTxDestination> destinations;
-    bool has_data{false};
+    bool has_data{ false };
 
     for (const std::string& name_ : outputs.getKeys()) {
         if (name_ == "data") {
@@ -109,7 +109,8 @@ RawTransaction RawTransaction::FromRPC(const UniValue& inputs_in, const UniValue
             CTxOut out(0, scriptPubKey);
             rawTx.tx.vout.push_back(std::move(out));
             //rawTx.m_recipients.push_back(CRecipient{GenericAddress(scriptPubKey), 0, false});
-        } else {
+        }
+        else {
             CTxDestination destination = DecodeDestination(name_);
             if (!IsValidDestination(destination)) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid Litecoin address: ") + name_);
@@ -121,13 +122,14 @@ RawTransaction RawTransaction::FromRPC(const UniValue& inputs_in, const UniValue
 
             CAmount nAmount = AmountFromValue(outputs[name_]);
 
-            GenericAddress address{destination};
+            GenericAddress address{ destination };
             if (address.IsMWEB()) {
                 mw::MutableOutput mweb_output;
                 mweb_output.amount = nAmount;
                 mweb_output.address = address.GetMWEBAddress();
                 rawTx.tx.mweb_tx.outputs.push_back(std::move(mweb_output));
-            } else {
+            }
+            else {
                 CTxOut out(nAmount, address.GetScript());
                 rawTx.tx.vout.push_back(std::move(out));
             }
@@ -162,9 +164,11 @@ FundTransactionResult RawTransaction::FundTransaction(CWallet& wallet, const int
         if (wallet.IsMine(input_idx)) {
             // The input was found in the wallet, so select as internal
             coinControl.Select(input_idx);
-        } else if (coins[input_idx].IsNull()) {
+        }
+        else if (coins[input_idx].IsNull()) {
             throw JSONRPCError(RPC_WALLET_ERROR, "Unable to find UTXO for external input");
-        } else {
+        }
+        else {
             // The input was not in the wallet, but is in the UTXO set, so select as external
             coinControl.SelectExternal(input_idx, coins[input_idx].ToOutput());
         }
@@ -178,6 +182,15 @@ FundTransactionResult RawTransaction::FundTransaction(CWallet& wallet, const int
     const auto& txr = *res;
     CTransactionRef tx_new = txr.tx;
     tx.vout = tx_new->vout;
+
+    for (const PegOutCoin& pegout : tx_new->mweb_tx.GetPegOuts()) {
+        tx.mweb_tx.AddPegout(mw::PegOutRecipient{ pegout.GetScriptPubKey(), pegout.GetAmount(), false });
+    }
+
+    for (const PegInCoin& pegin : tx_new->mweb_tx.GetPegIns()) {
+        tx.mweb_tx.SetPeginAmount(tx.mweb_tx.GetPeginAmount().value_or(0) + pegin.GetAmount());
+    }
+
     //if (txr.change_pos.IsLTC()) {
     //    const int nChangePos = (int)txr.change_pos.ToLTC();
     //    tx.vout.insert(tx.vout.begin() + nChangePos, tx_new->vout[nChangePos]);
@@ -240,9 +253,10 @@ std::vector<CRecipient> RawTransaction::BuildRecipients(const std::set<int>& set
 
     for (size_t i = 0; i < tx.mweb_tx.outputs.size(); i++) {
         mw::MutableOutput& mweb_output = tx.mweb_tx.outputs[i];
-        assert(mweb_output.recipient.has_value());
+        assert(mweb_output.amount.has_value() && mweb_output.address.has_value());
+        mweb_output.subtract_fee_from_amount = (setSubtractFeeFromOutputs.count(tx.vout.size() + i) == 1);
 
-        mweb_output.recipient->fSubtractFeeFromAmount = (setSubtractFeeFromOutputs.count(tx.vout.size() + i) == 1);
+        CRecipient recipient{*mweb_output.address, *mweb_output.amount, *mweb_output.subtract_fee_from_amount};
         recipients.push_back(std::move(recipient));
     }
 
@@ -251,41 +265,6 @@ std::vector<CRecipient> RawTransaction::BuildRecipients(const std::set<int>& set
 
 CMutableTransaction RawTransaction::ToMutableTx() const
 {
-    //CMutableTransaction tx;
-    //tx.nVersion = m_version;
-    //tx.nLockTime = m_lockTime;
-
-    //for (const Input& input : m_inputs) {
-    //    if (input.tx_input.IsMWEB()) {
-    //        // MW: TODO - Finish this
-    //        mw::MutableInput mutable_input{input.tx_input.ToMWEB()};
-
-    //        if (input.coin.has_value()) {
-    //            const MWWalletUTXO& mw_output = input.coin.value().GetMWEB();
-    //            mutable_input.amount = mw_output.coin.amount;
-    //            mutable_input.raw_blind = mw_output.coin.blind;
-    //            mutable_input.spend_key = mw_output.coin.spend_key;
-    //        }
-
-    //        tx.mweb_tx.inputs.push_back(std::move(mutable_input));
-    //    } else {
-    //        tx.vin.push_back(input.tx_input.GetTxIn());
-    //    }
-    //}
-
-    //for (const CRecipient& recipient : m_recipients.All()) {
-    //    if (recipient.IsMWEB()) {
-    //        mw::MutableOutput mutable_output{};
-    //        mutable_output.amount = recipient.nAmount;
-    //        mutable_output.address = recipient.GetMWEBAddress();
-    //        tx.mweb_tx.outputs.push_back(std::move(mutable_output));
-    //    } else {
-    //        CTxOut out(recipient.nAmount, recipient.GetScript());
-    //        tx.vout.push_back(out);
-    //    }
-    //}
-
-    //return tx;
     return tx;
 }
 

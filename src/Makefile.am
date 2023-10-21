@@ -119,14 +119,6 @@ endif
 libmw_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 libmw_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libmw_a_SOURCES = \
-	libmw/src/common/Logger.cpp \
-	libmw/src/crypto/Bulletproofs.cpp \
-	libmw/src/crypto/ConversionUtil.cpp \
-	libmw/src/crypto/MuSig.cpp \
-	libmw/src/crypto/Pedersen.cpp \
-	libmw/src/crypto/PublicKeys.cpp \
-	libmw/src/crypto/Schnorr.cpp \
-	libmw/src/crypto/SecretKeys.cpp \
 	libmw/src/db/CoinDB.cpp \
 	libmw/src/db/LeafDB.cpp \
 	libmw/src/db/MMRInfoDB.cpp \
@@ -141,14 +133,6 @@ libmw_a_SOURCES = \
 	libmw/src/mmr/PMMRCache.cpp \
 	libmw/src/mmr/PMMR.cpp \
 	libmw/src/mmr/PruneList.cpp \
-	libmw/src/models/block/Block.cpp \
-	libmw/src/models/crypto/Commitment.cpp \
-	libmw/src/models/crypto/PublicKey.cpp \
-	libmw/src/models/tx/Input.cpp \
-	libmw/src/models/tx/Kernel.cpp \
-	libmw/src/models/tx/Output.cpp \
-	libmw/src/models/tx/Transaction.cpp \
-	libmw/src/models/tx/TxBody.cpp \
 	libmw/src/node/BlockValidator.cpp \
 	libmw/src/node/BlockBuilder.cpp \
 	libmw/src/node/CoinsViewCache.cpp \
@@ -657,6 +641,22 @@ libbitcoin_consensus_a_SOURCES = \
   consensus/validation.h \
   hash.cpp \
   hash.h \
+  libmw/src/common/Logger.cpp \
+  libmw/src/crypto/Bulletproofs.cpp \
+  libmw/src/crypto/ConversionUtil.cpp \
+  libmw/src/crypto/MuSig.cpp \
+  libmw/src/crypto/Pedersen.cpp \
+  libmw/src/crypto/PublicKeys.cpp \
+  libmw/src/crypto/Schnorr.cpp \
+  libmw/src/crypto/SecretKeys.cpp \
+  libmw/src/models/crypto/Commitment.cpp \
+  libmw/src/models/crypto/PublicKey.cpp \
+  libmw/src/models/block/Block.cpp \
+  libmw/src/models/tx/Input.cpp \
+  libmw/src/models/tx/Kernel.cpp \
+  libmw/src/models/tx/Output.cpp \
+  libmw/src/models/tx/Transaction.cpp \
+  libmw/src/models/tx/TxBody.cpp \
   prevector.h \
   primitives/block.cpp \
   primitives/block.h \

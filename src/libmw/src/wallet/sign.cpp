@@ -1,4 +1,5 @@
 #include <mw/wallet/sign.h>
+#include <mw/common/Logger.h>
 #include <mw/crypto/Blinds.h>
 #include <mw/crypto/Pedersen.h>
 #include <mw/crypto/SecretKeys.h>
@@ -121,6 +122,8 @@ static util::Result<SignOutputResult> SignOutput(MutableOutput& output) noexcept
         *output.address,
         *output.amount);
 
+    output.Update(finalized);
+
     // Populate Coin
     mw::Coin coin;
     coin.blind = raw_blind;
@@ -136,6 +139,10 @@ static util::Result<SignOutputResult> SignOutput(MutableOutput& output) noexcept
 util::Result<mw::SignTxResult> SignTx(mw::MutableTx& tx, const std::map<mw::Hash, mw::Coin>& input_coins) noexcept
 {
     SignTxResult result{};
+    if (tx.IsNull()) {
+        LOG_INFO("mw::MutableTx IsNull");
+        return result;
+    }
 
     Blinds kernel_offset{};
     Blinds stealth_offset{};
@@ -181,6 +188,10 @@ util::Result<mw::SignTxResult> SignTx(mw::MutableTx& tx, const std::map<mw::Hash
         stealth_offset.Sub(signed_input.spend_key);
     }
 
+    if (tx.kernels.empty()) {
+        tx.kernels.push_back(mw::MutableKernel{});
+    }
+
     // Sign kernels
     for (MutableKernel& kernel : tx.kernels) {
         if (kernel.signature.has_value()) {
@@ -195,7 +206,7 @@ util::Result<mw::SignTxResult> SignTx(mw::MutableTx& tx, const std::map<mw::Hash
             stealth_blind,
             kernel.fee,
             kernel.pegin,
-            kernel.pegouts,
+            kernel.GetPegOuts(),
             kernel.lock_height
         );
 
@@ -208,6 +219,9 @@ util::Result<mw::SignTxResult> SignTx(mw::MutableTx& tx, const std::map<mw::Hash
         stealth_offset.Sub(stealth_blind);
     }
 
+    // MW: TODO - Update pegin scripts
+
+    // MW: TODO - Offset calculations are wrong
     if (!tx.kernel_offset.IsZero()) {
         kernel_offset.Add(tx.kernel_offset);
     }

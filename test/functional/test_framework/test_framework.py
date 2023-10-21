@@ -992,7 +992,7 @@ class LitecoinTestFramework(BitcoinTestFramework):
         print(outputs)
         #pdb.set_trace()
         tx = node.send(outputs=outputs, options=options)
-        print(node.gettransaction(tx['txid']))
+        #print(node.gettransaction(tx['txid']))
 
         
         print(node.getrawmempool())

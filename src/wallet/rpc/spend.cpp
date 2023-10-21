@@ -83,9 +83,9 @@ static UniValue FinishTransaction(const std::shared_ptr<CWallet> pwallet, const 
     PartiallySignedTransaction psbtx = rawTx.ToPSBT(*pwallet);
     LogPrintf("FinishTransaction - PSBT created\n");
 
-    CMutableTransaction mtx;
-    const bool complete = FinalizeAndExtractPSBT(psbtx, mtx);
-    LogPrintf("FinishTransaction - PSBT finalized\n");
+    util::Result<CMutableTransaction> finalize_result = FinalizePSBT(psbtx);
+    const bool complete = finalize_result.has_value();
+    LogPrintf("FinishTransaction - PSBT finalized. Complete: %d\n", complete ? 1 : 0);
 
     UniValue result(UniValue::VOBJ);
 
@@ -100,6 +100,9 @@ static UniValue FinishTransaction(const std::shared_ptr<CWallet> pwallet, const 
     }
 
     if (complete) {
+        CMutableTransaction mtx = finalize_result.value();
+        LogPrintf("FinishTransaction - MWEB IsFinal: %d, MWEB finalized: %d\n", mtx.mweb_tx.IsFinal() ? 1 : 0, mtx.mweb_tx.Finalized().has_value() ? 1 : 0);
+
         std::string hex{EncodeHexTx(CTransaction(mtx))};
         CTransactionRef tx(MakeTransactionRef(std::move(mtx)));
         result.pushKV("txid", tx->GetHash().GetHex());

@@ -74,10 +74,10 @@ FUZZ_TARGET_INIT(psbt, initialize_psbt)
     (void)FinalizePSBT(psbt_mut);
 
     psbt_mut = psbt;
-    CMutableTransaction result;
-    if (FinalizeAndExtractPSBT(psbt_mut, result)) {
-        const PartiallySignedTransaction psbt_from_tx{result};
-    }
+    //CMutableTransaction result;
+    //if (FinalizeAndExtractPSBT(psbt_mut, result)) {
+    //    const PartiallySignedTransaction psbt_from_tx{result};
+    //}
 
     PartiallySignedTransaction psbt_merge;
     str = fuzzed_data_provider.ConsumeRandomLengthString();

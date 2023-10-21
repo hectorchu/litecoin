@@ -113,7 +113,7 @@ struct Tx {
     Tx(const mw::Transaction::CPtr& tx)
         : m_transaction(tx) {}
     Tx(const mw::MutableTx& mutable_tx)
-        : m_transaction(nullptr) { } // MW: TODO - Implement
+        : m_transaction(mutable_tx.Finalized().value_or(nullptr)) {}
 
     std::set<mw::Hash> GetSpentIDs() const noexcept
     {

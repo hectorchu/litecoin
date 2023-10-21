@@ -1556,15 +1556,15 @@ static RPCHelpMan finalizepsbt()
 
     bool extract = request.params[1].isNull() || (!request.params[1].isNull() && request.params[1].get_bool());
 
-    CMutableTransaction mtx;
-    bool complete = FinalizeAndExtractPSBT(psbtx, mtx);
+    util::Result<CMutableTransaction> finalize_result = FinalizePSBT(psbtx);
+    bool complete = finalize_result.has_value();
 
     UniValue result(UniValue::VOBJ);
     CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
     std::string result_str;
 
     if (complete && extract) {
-        ssTx << mtx;
+        ssTx << finalize_result.value();
         result_str = HexStr(ssTx);
         result.pushKV("hex", result_str);
     } else {
