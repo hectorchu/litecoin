@@ -1720,12 +1720,11 @@ class msg_sendcmpct:
 
 
 class msg_cmpctblock:
-    __slots__ = ("header_and_shortids", "version")
+    __slots__ = ("header_and_shortids",)
     msgtype = b"cmpctblock"
 
-    def __init__(self, header_and_shortids=None, version=1):
+    def __init__(self, header_and_shortids = None):
         self.header_and_shortids = header_and_shortids
-        self.version = version
 
     def deserialize(self, f):
         self.header_and_shortids = P2PHeaderAndShortIDs()
@@ -1733,7 +1732,7 @@ class msg_cmpctblock:
 
     def serialize(self):
         r = b""
-        r += self.header_and_shortids.serialize(version=self.version)
+        r += self.header_and_shortids.serialize()
         return r
 
     def __repr__(self):
