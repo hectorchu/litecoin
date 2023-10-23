@@ -85,7 +85,7 @@ class ToolWalletTest(BitcoinTestFramework):
                 Address Book: %d
             ''' % (wallet_name, keypool * output_types, transactions, imported_privs * 3 + address))
         else:
-            output_types = 3  # p2pkh, p2sh, segwit. Legacy wallets do not support bech32m.
+            output_types = 4  # p2pkh, p2sh, segwit, mweb. Legacy wallets do not support bech32m.
             return textwrap.dedent('''\
                 Wallet info
                 ===========
