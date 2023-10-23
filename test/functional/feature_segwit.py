@@ -596,18 +596,19 @@ class SegWitTest(BitcoinTestFramework):
                     scriptPubKey = "a9142f8c469c2f0084c48e11f998ffbe7efa7549f26d87"
                     transaction = "01000000000100e1f5050000000017a9142f8c469c2f0084c48e11f998ffbe7efa7549f26d8700000000"
 
-                self.nodes[1].importaddress(scriptPubKey, "", False)
+                label = "use_p2wsh" + str(use_p2wsh)
+                self.nodes[1].importaddress(scriptPubKey, label, False)
                 rawtxfund = self.nodes[1].fundrawtransaction(transaction)['hex']
                 rawtxfund = self.nodes[1].signrawtransactionwithwallet(rawtxfund)["hex"]
                 txid = self.nodes[1].sendrawtransaction(rawtxfund)
 
                 assert_equal(self.nodes[1].gettransaction(txid, True)["txid"], txid)
-                assert_equal(self.nodes[1].listtransactions("*", 1, 0, True)[0]["txid"], txid)
+                assert_equal(self.nodes[1].listtransactions(label, 1, 0, True)[0]["txid"], txid)
 
                 # Assert it is properly saved
                 self.restart_node(1)
                 assert_equal(self.nodes[1].gettransaction(txid, True)["txid"], txid)
-                assert_equal(self.nodes[1].listtransactions("*", 1, 0, True)[0]["txid"], txid)
+                assert_equal(self.nodes[1].listtransactions(label, 1, 0, True)[0]["txid"], txid)
 
         self.log.info('Test negative and unknown rpcserialversion throw an init error')
         self.stop_node(0)
