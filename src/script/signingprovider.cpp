@@ -223,5 +223,8 @@ CKeyID GetKeyForDestination(const SigningProvider& store, const CTxDestination& 
             return pub.GetID();
         }
     }
+    if (auto stealth_address = std::get_if<StealthAddress>(&dest)) {
+        return stealth_address->B().GetID();
+    }
     return CKeyID();
 }
