@@ -682,13 +682,9 @@ CScript GetScriptForPegin(const mw::Hash& kernel_id)
     return script;
 }
 
-bool IsPegInOutput(const GenericOutput& output)
+bool IsPegInOutput(const CTxOut& txout)
 {
-    if (!output.IsMWEB()) {
-        std::vector<std::vector<uint8_t>> solutions_data;
-        auto which_type = Solver(output.GetTxOut().scriptPubKey, solutions_data);
-        return which_type == TxoutType::WITNESS_MWEB_PEGIN;
-    }
-
-    return false;
+    std::vector<std::vector<uint8_t>> solutions_data;
+    auto which_type = Solver(txout.scriptPubKey, solutions_data);
+    return which_type == TxoutType::WITNESS_MWEB_PEGIN;
 }

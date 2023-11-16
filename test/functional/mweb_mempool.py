@@ -40,10 +40,11 @@ class MWEBMempoolTest(LitecoinTestFramework):
 
         self.log.info("Setup MWEB chain")
         self.setup_mweb_chain(node0)
+        self.sync_blocks()
         
         self.log.info("Pegin some coins")
         node0.sendtoaddress(node0.getnewaddress(address_type='mweb'), 10)
-        self.generatetoaddress(node0, nblocks=1, address=node0.getnewaddress(), sync_fun=self.no_op)
+        self.generatetoaddress(node0, nblocks=1, address=node0.getnewaddress(), sync_fun=self.sync_all)
         
         self.log.info("Create an MWEB-to-MWEB transaction")
         txid = node0.sendtoaddress(node0.getnewaddress(address_type='mweb'), 2)

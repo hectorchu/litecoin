@@ -129,7 +129,7 @@ void CoinsViewCache::UndoBlock(const mw::BlockUndo::CPtr& pUndo)
 
 mw::Block::Ptr CoinsViewCache::BuildNextBlock(const uint64_t height, const std::vector<mw::Transaction::CPtr>& transactions)
 {
-    LOG_TRACE_F("Building block with {} transactions", transactions.size());
+    LOG_TRACE("Building block with {} transactions", transactions.size());
 
     auto pTransaction = Aggregation::Aggregate(transactions);
 

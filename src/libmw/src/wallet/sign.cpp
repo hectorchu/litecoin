@@ -4,6 +4,7 @@
 #include <mw/crypto/Pedersen.h>
 #include <mw/crypto/SecretKeys.h>
 #include <mw/models/tx/OutputMask.h>
+#include <script/standard.h>
 
 MW_NAMESPACE
 
@@ -42,39 +43,31 @@ struct SignInputResult
     SecretKey spend_key{};
 };
 
-static util::Result<SignInputResult> SignInput(MutableInput& input, const std::optional<mw::Coin>& coin) noexcept
+static util::Result<SignInputResult> SignInput(MutableInput& input) noexcept
 {
     if (input.signature.has_value()) {
         return util::Error{Untranslated("Input is already signed")};
     }
 
     if (!input.raw_blind) {
-        if (!coin.has_value() || !coin->blind.has_value()) {
-            return util::Error{Untranslated("Input blinding factor missing")};
-        }
-
-        input.raw_blind = coin->blind.value();
+        return util::Error{Untranslated("Input blinding factor missing")};
     }
 
     if (!input.spend_key) {
-        if (!coin.has_value() || !coin->spend_key.has_value()) {
-            return util::Error{Untranslated("Input spend key missing")};
-        }
-
-        input.spend_key = coin->spend_key.value();
+        return util::Error{Untranslated("Input spend key missing")};
     }
 
     if (!input.amount) {
-        if (!coin.has_value()) {
-            return util::Error{Untranslated("Input amount missing")};
-        }
-
-        input.amount = coin->amount;
+        return util::Error{Untranslated("Input amount missing")};
     }
 
+    input.output_pubkey = PublicKey::From(*input.spend_key);
+
+    LOG_INFO("Signing input (amount: {})", input.amount.value());
     if (!input.ephemeral_key) {
         input.ephemeral_key = SecretKey::Random();
     }
+    input.input_pubkey = PublicKey::From(*input.ephemeral_key);
 
     if (!input.features) {
         input.features = (uint8_t)Input::FeatureBit::STEALTH_KEY_FEATURE_BIT;
@@ -114,6 +107,7 @@ static util::Result<SignOutputResult> SignOutput(MutableOutput& output) noexcept
         return util::Error{Untranslated("Output amount or address missing")};
     }
 
+    LOG_INFO("Signing output");
     BlindingFactor raw_blind;
     SecretKey ephemeral_key = SecretKey::Random();
     mw::Output finalized = mw::Output::Create(
@@ -136,10 +130,10 @@ static util::Result<SignOutputResult> SignOutput(MutableOutput& output) noexcept
     return SignOutputResult{std::move(output_blind), std::move(ephemeral_key), std::move(coin)};
 }
 
-util::Result<mw::SignTxResult> SignTx(mw::MutableTx& tx, const std::map<mw::Hash, mw::Coin>& input_coins) noexcept
+util::Result<mw::SignTxResult> SignTx(CMutableTransaction& tx) noexcept
 {
     SignTxResult result{};
-    if (tx.IsNull()) {
+    if (tx.mweb_tx.IsNull()) {
         LOG_INFO("mw::MutableTx IsNull");
         return result;
     }
@@ -148,8 +142,8 @@ util::Result<mw::SignTxResult> SignTx(mw::MutableTx& tx, const std::map<mw::Hash
     Blinds stealth_offset{};
 
     // Sign outputs
-    for (MutableOutput& output : tx.outputs) {
-        if (output.signature.has_value()) {
+    for (MutableOutput& output : tx.mweb_tx.outputs) {
+        if (output.IsFinal()) {
             continue;
         }
 
@@ -161,23 +155,16 @@ util::Result<mw::SignTxResult> SignTx(mw::MutableTx& tx, const std::map<mw::Hash
         const SignOutputResult& signed_output = sign_output_result.value();
         kernel_offset.Add(signed_output.output_blind);
         stealth_offset.Add(signed_output.ephemeral_key);
-        result.coins_by_output_id[*output.output_id] = signed_output.coin;
+        result.coins_by_output_id[*output.CalcOutputID()] = signed_output.coin;
     }
 
     // Sign inputs
-    for (MutableInput& input : tx.inputs) {
-        if (input.signature.has_value()) {
+    for (MutableInput& input : tx.mweb_tx.inputs) {
+        if (input.IsFinal()) {
             continue;
         }
 
-        auto coin_iter = input_coins.find(input.output_id);
-
-        std::optional<mw::Coin> input_coin = std::nullopt;
-        if (coin_iter != input_coins.end()) {
-            input_coin = coin_iter->second;
-        }
-
-        util::Result<SignInputResult> input_sign_result = SignInput(input, input_coin);
+        util::Result<SignInputResult> input_sign_result = SignInput(input);
         if (!input_sign_result) {
             return input_sign_result.error();
         }
@@ -188,13 +175,15 @@ util::Result<mw::SignTxResult> SignTx(mw::MutableTx& tx, const std::map<mw::Hash
         stealth_offset.Sub(signed_input.spend_key);
     }
 
-    if (tx.kernels.empty()) {
-        tx.kernels.push_back(mw::MutableKernel{});
+    if (tx.mweb_tx.kernels.empty()) {
+        tx.mweb_tx.kernels.push_back(mw::MutableKernel{});
     }
 
+    std::vector<PegInCoin> pegins;
+
     // Sign kernels
-    for (MutableKernel& kernel : tx.kernels) {
-        if (kernel.signature.has_value()) {
+    for (MutableKernel& kernel : tx.mweb_tx.kernels) {
+        if (kernel.IsFinal()) {
             continue;
         }
 
@@ -210,27 +199,42 @@ util::Result<mw::SignTxResult> SignTx(mw::MutableTx& tx, const std::map<mw::Hash
             kernel.lock_height
         );
 
-        kernel.features = finalized.GetFeatures();
         kernel.stealth_excess = finalized.GetStealthExcess();
         kernel.excess = finalized.GetExcess();
         kernel.signature = finalized.GetSignature();
+
+        if (kernel.pegin.has_value()) {
+            pegins.push_back(PegInCoin{kernel.pegin.value(), finalized.GetKernelID()});
+        }
 
         kernel_offset.Sub(kernel_blind);
         stealth_offset.Sub(stealth_blind);
     }
 
-    // MW: TODO - Update pegin scripts
-
-    // MW: TODO - Offset calculations are wrong
-    if (!tx.kernel_offset.IsZero()) {
-        kernel_offset.Add(tx.kernel_offset);
+    // Update pegin scripts
+    for (const PegInCoin& pegin : pegins) {
+        for (CTxOut& out : tx.vout) {
+            if (out.nValue == pegin.GetAmount() && out.scriptPubKey.IsMWEBPegin()) {
+                out.scriptPubKey = GetScriptForPegin(pegin.GetKernelID());
+            }
+        }
     }
-    tx.kernel_offset = kernel_offset.Total();
 
-    if (!tx.stealth_offset.IsZero()) {
-        stealth_offset.Add(tx.stealth_offset);
+    tx.mweb_tx.kernel_offset = kernel_offset.Total();
+    tx.mweb_tx.stealth_offset = stealth_offset.Total();
+
+    CTransaction finalized_tx(tx);
+    try {
+        if (finalized_tx.mweb_tx.IsNull()) {
+            return util::Error{Untranslated("Failed to construct MWEB transaction")};
+        }
+
+        finalized_tx.mweb_tx.m_transaction->Validate();
+        LOG_INFO("Valid Tx: {}", finalized_tx.ToString());
+    } catch (std::exception& e) {
+        LOG_INFO("Validate() failed: {} for tx: {}", e.what(), finalized_tx.ToString());
+        return util::Error{Untranslated("Validate failed")};
     }
-    tx.stealth_offset = kernel_offset.Total();
 
     return result;
 }

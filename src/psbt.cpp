@@ -4,21 +4,19 @@
 
 #include <psbt.h>
 
+#include <logging.h>
 #include <mw/wallet/sign.h>
 #include <policy/policy.h>
 #include <util/check.h>
 #include <util/strencodings.h>
-
 
 PartiallySignedTransaction::PartiallySignedTransaction(const CMutableTransaction& tx, uint32_t version) : m_version(version)
 {
     if (version == 0) {
         this->tx = tx;
     }
-    //inputs.resize(tx.vin.size() + tx.mweb_tx.inputs.size(), PSBTInput(GetVersion()));
-    //outputs.resize(tx.vout.size() + tx.mweb_tx.outputs.size(), PSBTOutput(GetVersion()));
-    //kernels.resize(tx.mweb_tx.kernels.size(), PSBTKernel());
-    //SetupFromTx(tx);
+
+    SetupFromTx(tx);
 }
 
 bool PartiallySignedTransaction::IsNull() const
@@ -90,7 +88,7 @@ bool PartiallySignedTransaction::ComputeTimeLock(uint32_t& locktime) const
     return true;
 }
 
-CMutableTransaction PartiallySignedTransaction::GetUnsignedTx() const
+CMutableTransaction PartiallySignedTransaction::GetUnsignedTx() const // MW: TODO - Just Call this ToMutableTx() and add scriptSig to outputs?
 {
     if (tx != std::nullopt) {
         return *tx;
@@ -102,7 +100,7 @@ CMutableTransaction PartiallySignedTransaction::GetUnsignedTx() const
     assert(locktime_success);
     uint32_t max_sequence = CTxIn::SEQUENCE_FINAL;
     for (const PSBTInput& input : inputs) {
-        if (input.mweb_output_id.has_value()) {
+        if (input.IsMWEB()) {
             mw::MutableInput mweb_input(*input.mweb_output_id);
             mweb_input.commitment = input.mweb_output_commit;
             mweb_input.output_pubkey = input.mweb_output_pubkey;
@@ -126,24 +124,37 @@ CMutableTransaction PartiallySignedTransaction::GetUnsignedTx() const
         }
     }
 
-    for (const PSBTOutput& output : outputs) {
+    for (const PSBTOutput& psbt_output : outputs) {
         // MW: TODO - Which fields should be populated at each stage of the PSBT?
-        if (output.mweb_stealth_address.has_value() || output.mweb_commit.has_value()) {
+        if (psbt_output.IsMWEB()) {
             mw::MutableOutput mweb_output;
-            mweb_output.commitment = output.mweb_commit;
-            mweb_output.sender_pubkey = output.mweb_sender_pubkey;
-            mweb_output.receiver_pubkey = output.mweb_output_pubkey;
-            // MW: TODO - mweb_output.message =
-            mweb_output.proof = output.mweb_rangeproof;
-            mweb_output.signature = output.mweb_sig;
-            mweb_output.amount = output.amount;
-            mweb_output.address = output.mweb_stealth_address;
+            mweb_output.commitment = psbt_output.mweb_commit;
+            mweb_output.sender_pubkey = psbt_output.mweb_sender_pubkey;
+            mweb_output.receiver_pubkey = psbt_output.mweb_output_pubkey;
+            if (psbt_output.mweb_key_exchange_pubkey && psbt_output.mweb_view_tag && psbt_output.mweb_enc_value && psbt_output.mweb_enc_nonce) {
+                mweb_output.message = mw::OutputMessage(
+                    (uint8_t)mw::OutputMessage::STANDARD_FIELDS_FEATURE_BIT, // MW: TODO - mweb_features
+                    *psbt_output.mweb_key_exchange_pubkey,
+                    *psbt_output.mweb_view_tag,
+                    *psbt_output.mweb_enc_value,
+                    *psbt_output.mweb_enc_nonce);
+            }
+
+            mweb_output.proof = psbt_output.mweb_rangeproof;
+            mweb_output.signature = psbt_output.mweb_sig;
+            mweb_output.amount = psbt_output.amount;
+            mweb_output.address = psbt_output.mweb_stealth_address;
+
+            // MW: TODO - If possible, calculate mweb_output_id
+            if (!mweb_output.IsFinal()) {
+                LogPrintf("MWEB output is NOT final\n");
+            }
             mtx.mweb_tx.outputs.push_back(std::move(mweb_output));
         } else {
             CTxOut txout;
-            txout.nValue = *output.amount;
-            txout.scriptPubKey = *output.script;
-            mtx.vout.push_back(txout);
+            txout.nValue = *psbt_output.amount;
+            txout.scriptPubKey = *psbt_output.script;
+            mtx.vout.push_back(std::move(txout));
         }
     }
 
@@ -297,6 +308,7 @@ bool PartiallySignedTransaction::AddOutput(const PSBTOutput& psbtout)
 
 bool PSBTInput::GetUTXO(CTxOut& utxo) const
 {
+    // MW: TODO - Handle MWEB inputs 
     if (non_witness_utxo) {
         if (prev_out >= non_witness_utxo->vout.size()) {
             return false;
@@ -331,7 +343,7 @@ bool PartiallySignedTransaction::IsComplete() const noexcept
     }
 
     for (const PSBTOutput& output : outputs) {
-        // MW: TODO - Check if MWEB, and if so, check if signed
+        complete &= (!output.IsMWEB() || output.mweb_sig.has_value());
     }
 
     return complete;
@@ -520,7 +532,7 @@ void PSBTOutput::FromSignatureData(const SignatureData& sigdata)
 
 bool PSBTOutput::IsNull() const
 {
-    return redeem_script.empty() && witness_script.empty() && hd_keypaths.empty() && unknown.empty(); // MW: TODO - Check MWEB fields
+    return redeem_script.empty() && witness_script.empty() && hd_keypaths.empty() && unknown.empty() && !mweb_stealth_address.has_value() && !mweb_commit.has_value();
 }
 
 void PSBTOutput::Merge(const PSBTOutput& output)
@@ -545,7 +557,7 @@ bool PSBTInputSigned(const PSBTInput& input)
     return !input.final_script_sig.empty() || !input.final_script_witness.IsNull() || input.mweb_sig.has_value();
 }
 
-bool PSBTInputSignedAndVerified(const PartiallySignedTransaction psbt, unsigned int input_index, const PrecomputedTransactionData* txdata)
+bool PSBTInputSignedAndVerified(const PartiallySignedTransaction& psbt, unsigned int input_index, const PrecomputedTransactionData* txdata)
 {
     CTxOut utxo;
     assert(psbt.inputs.size() >= input_index);
@@ -590,8 +602,8 @@ void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransactio
 {
     CMutableTransaction tx = psbt.GetUnsignedTx();
     PSBTOutput& psbt_out = psbt.outputs.at(index);
-    if (psbt_out.mweb_stealth_address.has_value() || psbt_out.mweb_sig.has_value()) {
-        return; // MW: TODO - Sign MWEB outputs?
+    if (psbt_out.IsMWEB()) {
+        return;
     }
 
     const CTxOut& out = tx.vout.at(index);
@@ -610,15 +622,103 @@ void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransactio
     psbt_out.FromSignatureData(sigdata);
 }
 
+void PSBTSignMWEBTx(const SigningProvider& provider, PartiallySignedTransaction& psbtx)
+{
+    LogPrintf("PSBTSignMWEBTx: BEGIN\n");
+
+    // Finalize MWEB outputs and kernels
+    CMutableTransaction mtx = psbtx.GetUnsignedTx();
+
+    LogPrintf("Inputs(LTC: %llu, MWEB: %llu), Outputs(LTC: %llu, MWEB: %llu), Kernels(MWEB: %llu)\n", mtx.vin.size(), mtx.mweb_tx.inputs.size(), mtx.vout.size(), mtx.mweb_tx.outputs.size(), mtx.mweb_tx.kernels.size());
+
+    util::Result<mw::SignTxResult> mweb_result = mw::SignTx(mtx);
+    if (mweb_result) {
+        size_t idx = 0;
+        for (PSBTInput& psbt_input : psbtx.inputs) {
+            if (!psbt_input.IsMWEB()) {
+                continue;
+            }
+
+            const mw::MutableInput& input = mtx.mweb_tx.inputs[idx++];
+            psbt_input.mweb_output_id = input.output_id;
+            psbt_input.mweb_output_commit = input.commitment;
+            psbt_input.mweb_output_pubkey = input.output_pubkey;
+            psbt_input.mweb_input_pubkey = input.input_pubkey;
+            // MW: TODO - psbt_input.mweb_features
+            psbt_input.mweb_sig = input.signature;
+            // MW: TODO - psbt_input.mweb_address_index
+            psbt_input.mweb_amount = input.amount;
+            // MW: TODO - psbt_input.mweb_shared_secret
+            psbt_input.mweb_blind = input.raw_blind;
+            // MW: TODO - psbt_input.mweb_utxo
+        }
+
+        idx = 0;
+        for (PSBTOutput& psbt_output : psbtx.outputs) {
+            if (!psbt_output.IsMWEB()) {
+                continue;
+            }
+
+            const mw::MutableOutput& output = mtx.mweb_tx.outputs[idx++];
+            psbt_output.amount = output.amount;
+            psbt_output.mweb_stealth_address = output.address;
+
+            psbt_output.mweb_commit = output.commitment;
+            // MW: TODO - psbt_output.mweb_features
+            psbt_output.mweb_sender_pubkey = output.sender_pubkey;
+            psbt_output.mweb_output_pubkey = output.receiver_pubkey;
+            psbt_output.mweb_key_exchange_pubkey = output.message->key_exchange_pubkey;
+            psbt_output.mweb_view_tag = output.message->view_tag;
+            psbt_output.mweb_enc_value = output.message->masked_value;
+            psbt_output.mweb_enc_nonce = output.message->masked_nonce;
+            psbt_output.mweb_rangeproof = output.proof;
+            psbt_output.mweb_sig = output.signature;
+        }
+
+        if (psbtx.kernels.size() < mtx.mweb_tx.kernels.size()) {
+            psbtx.kernels.resize(mtx.mweb_tx.kernels.size());
+        }
+
+        idx = 0;
+        for (const mw::MutableKernel& kernel : mtx.mweb_tx.kernels) {
+            PSBTKernel& psbt_kernel = psbtx.kernels[idx++];
+            psbt_kernel.commit = kernel.excess;
+            psbt_kernel.stealth_commit = kernel.stealth_excess;
+            psbt_kernel.fee = kernel.fee;
+            psbt_kernel.pegin_amount = kernel.pegin;
+            psbt_kernel.pegouts = kernel.GetPegOuts();
+            psbt_kernel.lock_height = kernel.lock_height;
+            psbt_kernel.extra_data = kernel.extradata;
+            psbt_kernel.sig = kernel.signature;
+        }
+
+
+        for (size_t i = 0; i < mtx.vout.size(); i++) {
+            CTxOut& out = mtx.vout[i];
+            if (out.scriptPubKey.IsMWEBPegin()) {
+                PSBTOutput& psbt_output = psbtx.outputs[i];
+                psbt_output.amount = out.nValue;
+                psbt_output.script = out.scriptPubKey;
+            }
+        }
+
+        psbtx.mweb_tx_offset = mtx.mweb_tx.kernel_offset;
+        psbtx.mweb_stealth_offset = mtx.mweb_tx.stealth_offset;
+    }
+
+    LogPrintf("PSBTSignMWEBTx: END\n");
+}
+
 PrecomputedTransactionData PrecomputePSBTData(const PartiallySignedTransaction& psbt)
 {
     const CMutableTransaction& tx = psbt.GetUnsignedTx();
     bool have_all_spent_outputs = true;
     std::vector<CTxOut> utxos;
     for (const PSBTInput& input : psbt.inputs) {
+        if (input.IsMWEB()) continue; // MW: TODO - Need to load these
         if (!input.GetUTXO(utxos.emplace_back())) have_all_spent_outputs = false;
     }
-    // MW: TODO - Check MWEB inputs
+
     PrecomputedTransactionData txdata;
     if (have_all_spent_outputs) {
         txdata.Init(tx, std::move(utxos), true);
@@ -630,10 +730,12 @@ PrecomputedTransactionData PrecomputePSBTData(const PartiallySignedTransaction& 
 
 bool SignPSBTInput(const SigningProvider& provider, PartiallySignedTransaction& psbt, int index, const PrecomputedTransactionData* txdata, int sighash,  SignatureData* out_sigdata, bool finalize)
 {
+    LogPrintf("SignPSBTInput - BEGIN\n");
     PSBTInput& input = psbt.inputs.at(index);
     const CMutableTransaction& tx = psbt.GetUnsignedTx();
 
     if (PSBTInputSignedAndVerified(psbt, index, txdata)) {
+        LogPrintf("SignPSBTInput - Already signed and verified\n");
         return true;
     }
 
@@ -698,6 +800,7 @@ bool SignPSBTInput(const SigningProvider& provider, PartiallySignedTransaction& 
         out_sigdata->missing_witness_script = sigdata.missing_witness_script;
     }
 
+    LogPrintf("SignPSBTInput - END. sig_complete: %s\n", sig_complete ? "TRUE" : "FALSE");
     return sig_complete;
 }
 
@@ -739,98 +842,21 @@ util::Result<CMutableTransaction> FinalizePSBT(PartiallySignedTransaction& psbtx
     //   signature, but have not combined them yet (e.g. because the combiner that created this
     //   PartiallySignedTransaction did not understand them), this will combine them into a final
     //   script.
-	bool complete = true;
+    bool complete = true;
     const PrecomputedTransactionData txdata = PrecomputePSBTData(psbtx);
     for (unsigned int i = 0; i < psbtx.inputs.size(); ++i) {
         complete &= SignPSBTInput(DUMMY_SIGNING_PROVIDER, psbtx, i, &txdata, SIGHASH_ALL, nullptr, true);
-    }
-
-    // Finalize MWEB outputs and kernels
-    CMutableTransaction mtx = psbtx.GetUnsignedTx();
-    util::Result<mw::SignTxResult> mweb_result = mw::SignTx(mtx.mweb_tx, {});
-    if (mweb_result) {
-        size_t idx = 0;
-        for (PSBTInput& psbt_input : psbtx.inputs) {
-            if (!psbt_input.IsMWEB()) {
-                continue;
-            }
-
-            const mw::MutableInput& input = mtx.mweb_tx.inputs[idx++];
-            psbt_input.mweb_output_commit = input.commitment;
-            psbt_input.mweb_output_pubkey = input.output_pubkey;
-            psbt_input.mweb_input_pubkey = input.input_pubkey;
-            // MW: TODO - psbt_input.mweb_features
-            psbt_input.mweb_sig = input.signature;
-            // MW: TODO - psbt_input.mweb_address_index
-            psbt_input.mweb_amount = input.amount;
-            // MW: TODO - psbt_input.mweb_shared_secret
-            psbt_input.mweb_blind = input.raw_blind;
-            // MW: TODO - psbt_input.mweb_utxo
-        }
-
-        idx = 0;
-        for (PSBTOutput& psbt_output : psbtx.outputs) {
-            if (!psbt_output.IsMWEB()) {
-                continue;
-            }
-
-            const mw::MutableOutput& output = mtx.mweb_tx.outputs[idx++];
-            psbt_output.mweb_commit = output.commitment;
-            // MW: TODO - psbt_output.mweb_features
-            psbt_output.mweb_sender_pubkey = output.sender_pubkey;
-            psbt_output.mweb_output_pubkey = output.receiver_pubkey;
-            psbt_output.mweb_key_exchange_pubkey = output.message->key_exchange_pubkey;
-            psbt_output.mweb_view_tag = output.message->view_tag;
-            psbt_output.mweb_enc_value = output.message->masked_value;
-            psbt_output.mweb_enc_nonce = output.message->masked_nonce;
-            psbt_output.mweb_rangeproof = output.proof;
-            psbt_output.mweb_sig = output.signature;
-        }
-
-        if (psbtx.kernels.size() < mtx.mweb_tx.kernels.size()) {
-            psbtx.kernels.resize(mtx.mweb_tx.kernels.size());
-        }
-
-        idx = 0;
-        for (const mw::MutableKernel& kernel : mtx.mweb_tx.kernels) {
-            PSBTKernel& psbt_kernel = psbtx.kernels[idx++];
-            psbt_kernel.commit = kernel.excess;
-            psbt_kernel.stealth_commit = kernel.stealth_excess;
-            psbt_kernel.fee = kernel.fee;
-            psbt_kernel.pegin_amount = kernel.pegin;
-            psbt_kernel.pegouts = kernel.GetPegOuts();
-            psbt_kernel.lock_height = kernel.lock_height;
-            psbt_kernel.extra_data = kernel.extradata;
-            psbt_kernel.sig = kernel.signature;
-        }
-
-        for (const PegInCoin& pegin : mtx.mweb_tx.GetPegIns()) {
-            for (size_t i = 0; i < mtx.vout.size(); i++) {
-                CTxOut& out = mtx.vout[i];
-                mw::Hash pegin_hash;
-                if (out.scriptPubKey.IsMWEBPegin(&pegin_hash)) { // MW: TODO - && pegin_hash.IsZero()) {
-                    out.scriptPubKey = GetScriptForPegin(pegin.GetKernelID());
-                    out.nValue = pegin.GetAmount();
-
-                    PSBTOutput& psbt_output = psbtx.outputs[i];
-                    psbt_output.amount = out.nValue;
-                    psbt_output.script = out.scriptPubKey;
-                    break;
-                }
-            }
-        }
-
-        psbtx.mweb_tx_offset = mtx.mweb_tx.kernel_offset;
-        psbtx.mweb_stealth_offset = mtx.mweb_tx.stealth_offset;
     }
 
     if (!psbtx.IsComplete()) {
         return util::Error{};
     }
 
+    CMutableTransaction mtx = psbtx.GetUnsignedTx();
     for (unsigned int i = 0; i < mtx.vin.size(); ++i) {
         mtx.vin[i].scriptSig = psbtx.inputs[i].final_script_sig;
         mtx.vin[i].scriptWitness = psbtx.inputs[i].final_script_witness;
+        LogPrintf("Input(%u): scriptSig=%s, scriptWitness=%s\n", i, HexStr(mtx.vin[i].scriptSig).substr(0, 24), mtx.vin[i].scriptWitness.ToString());
     }
 
     return mtx;
@@ -895,7 +921,6 @@ uint32_t PartiallySignedTransaction::GetVersion() const
     return 0;
 }
 
-#include <logging.h>
 void PartiallySignedTransaction::SetupFromTx(const CMutableTransaction& tx)
 {
     LogPrintf("SetupFromTx() - BEGIN\n");
@@ -905,71 +930,81 @@ void PartiallySignedTransaction::SetupFromTx(const CMutableTransaction& tx)
     size_t num_inputs = tx.vin.size() + tx.mweb_tx.inputs.size();
     size_t num_outputs = tx.vout.size() + tx.mweb_tx.outputs.size();
     size_t num_kernels = tx.mweb_tx.kernels.size();
-    uint32_t version = GetVersion();
-    LogPrintf("Inputs(%llu, %llu, %llu)\n", tx.vin.size(), tx.mweb_tx.inputs.size(), num_inputs);
-    LogPrintf("Outputs(%llu, %llu, %llu)\n", tx.vout.size(), tx.mweb_tx.outputs.size(), num_outputs);
-    LogPrintf("Kernels(%llu)\n", num_kernels);
+    LogPrintf("Inputs(LTC: %llu, MWEB: %llu), Outputs(LTC: %llu, MWEB: %llu), Kernels(MWEB: %llu)\n", tx.vin.size(), tx.mweb_tx.inputs.size(), tx.vout.size(), tx.mweb_tx.outputs.size(), num_kernels);
 
-    LogPrintf("SetupFromTx() - INPUTS\n");
-    uint32_t i = 0;
-    for (i = 0; i < tx.vin.size(); ++i) {
-        PSBTInput input(GetVersion());
+    inputs.resize(num_inputs, PSBTInput(GetVersion()));
+    outputs.resize(num_outputs, PSBTOutput(GetVersion()));
+    kernels.resize(num_kernels, PSBTKernel());
+
+    for (uint32_t i = 0; i < tx.vin.size(); ++i) {
+        PSBTInput& psbt_input = inputs[i];
         const CTxIn& txin = tx.vin.at(i);
 
-        input.prev_txid = txin.prevout.hash;
-        input.prev_out = txin.prevout.n;
-        input.sequence = txin.nSequence;
-        inputs.push_back(std::move(input));
+        psbt_input.prev_txid = txin.prevout.hash;
+        psbt_input.prev_out = txin.prevout.n;
+        psbt_input.sequence = txin.nSequence;
     }
 
-    for (uint32_t j = 0; j < tx.mweb_tx.inputs.size(); j++) {
-        PSBTInput input(GetVersion());
-        const mw::MutableInput& mweb_input = tx.mweb_tx.inputs[j];
+    for (uint32_t i = 0; i < tx.mweb_tx.inputs.size(); i++) {
+        PSBTInput& psbt_input = inputs[i + tx.vin.size()];
+        const mw::MutableInput& mweb_input = tx.mweb_tx.inputs[i];
 
-        input.mweb_output_id = mweb_input.output_id;
-        // MW: TODO - input.mweb_features = mweb_input.features;
-        input.mweb_output_commit = mweb_input.commitment;
-        input.mweb_input_pubkey = mweb_input.input_pubkey;
-        input.mweb_output_pubkey = mweb_input.output_pubkey;
-        input.mweb_sig = mweb_input.signature;
-        input.mweb_amount = mweb_input.amount;
-        // MW: TODO - Finish populating this
-        inputs.push_back(std::move(input));
+        psbt_input.mweb_output_id = mweb_input.output_id;
+        psbt_input.mweb_output_commit = mweb_input.commitment;
+        psbt_input.mweb_output_pubkey = mweb_input.output_pubkey;
+        psbt_input.mweb_input_pubkey = mweb_input.input_pubkey;
+        // MW: TODO - psbt_input.mweb_features
+        psbt_input.mweb_sig = mweb_input.signature;
+        // MW: TODO - psbt_input.mweb_address_index
+        psbt_input.mweb_amount = mweb_input.amount;
+        // MW: TODO - psbt_input.mweb_shared_secret
+        psbt_input.mweb_blind = mweb_input.raw_blind;
+        // MW: TODO - psbt_input.mweb_utxo
     }
 
-    LogPrintf("SetupFromTx() - Outputs\n");
-    for (i = 0; i < tx.vout.size(); ++i) {
-        PSBTOutput output(GetVersion());
+    for (uint32_t i = 0; i < tx.vout.size(); ++i) {
+        PSBTOutput& psbt_output = outputs[i];
         const CTxOut& txout = tx.vout.at(i);
 
-        output.amount = txout.nValue;
-        output.script = txout.scriptPubKey;
-        outputs.push_back(std::move(output));
+        psbt_output.amount = txout.nValue;
+        psbt_output.script = txout.scriptPubKey;
     }
 
-    for (uint32_t j = 0; j < tx.mweb_tx.outputs.size(); j++) {
-        PSBTOutput output(GetVersion());
-        const mw::MutableOutput& mweb_output = tx.mweb_tx.outputs[j];
+    for (uint32_t i = 0; i < tx.mweb_tx.outputs.size(); i++) {
+        PSBTOutput& psbt_output = outputs[i + tx.vout.size()];
+        const mw::MutableOutput& mweb_output = tx.mweb_tx.outputs[i];
 
-        // MW: TODO - Finish populating this
-        output.amount = mweb_output.amount;
-        output.mweb_stealth_address = mweb_output.address;
-        output.mweb_commit = mweb_output.commitment;
-        outputs.push_back(std::move(output));
+        psbt_output.mweb_stealth_address = mweb_output.address;
+        psbt_output.amount = mweb_output.amount;
+
+        psbt_output.mweb_commit = mweb_output.commitment;
+        // MW: TODO - psbt_output.mweb_features
+        psbt_output.mweb_sender_pubkey = mweb_output.sender_pubkey;
+        psbt_output.mweb_output_pubkey = mweb_output.receiver_pubkey;
+        if (mweb_output.message.has_value()) {
+            psbt_output.mweb_key_exchange_pubkey = mweb_output.message->key_exchange_pubkey;
+            psbt_output.mweb_view_tag = mweb_output.message->view_tag;
+            psbt_output.mweb_enc_value = mweb_output.message->masked_value;
+            psbt_output.mweb_enc_nonce = mweb_output.message->masked_nonce;
+        }
+        psbt_output.mweb_rangeproof = mweb_output.proof;
+        psbt_output.mweb_sig = mweb_output.signature;
     }
 
-    
-    for (const mw::MutableKernel& mweb_kernel : tx.mweb_tx.kernels) {
-        PSBTKernel kernel;
-        kernel.fee = mweb_kernel.fee;
-        kernel.pegin_amount = mweb_kernel.pegin;
-        kernel.pegouts = mweb_kernel.GetPegOuts();
-        // MW: TODO - Finish populating this
-        kernels.push_back(std::move(kernel));
+    for (uint32_t i = 0; i < tx.mweb_tx.kernels.size(); i++) {
+        PSBTKernel& psbt_kernel = kernels[i];
+        const mw::MutableKernel& mweb_kernel = tx.mweb_tx.kernels[i];
+
+        psbt_kernel.commit = mweb_kernel.excess;
+        psbt_kernel.stealth_commit = mweb_kernel.stealth_excess;
+        psbt_kernel.fee = mweb_kernel.fee;
+        psbt_kernel.pegin_amount = mweb_kernel.pegin;
+        psbt_kernel.pegouts = mweb_kernel.GetPegOuts();
+        psbt_kernel.lock_height = mweb_kernel.lock_height;
+        psbt_kernel.extra_data = mweb_kernel.extradata;
+        psbt_kernel.sig = mweb_kernel.signature;
     }
     LogPrintf("SetupFromTx() - END\n");
-
-    // MW: TODO - Kernels
 }
 
 void PartiallySignedTransaction::CacheUnsignedTxPieces()

@@ -15,7 +15,7 @@ void File::Create()
     if (inFile.is_open()) {
         inFile.close();
     } else {
-        LOG_INFO_F("File {} does not exist. Creating it now.", m_path);
+        LOG_INFO("File {} does not exist. Creating it now.", m_path);
         std::ofstream outFile(m_path.m_path, std::ios::out | std::ios::binary | std::ios::trunc);
         if (!outFile.is_open()) {
             ThrowFile_F("Failed to create file: {}", m_path);

@@ -333,8 +333,8 @@ public:
  */
 std::optional<std::vector<std::tuple<int, CScript, int>>> InferTaprootTree(const TaprootSpendData& spenddata, const XOnlyPubKey& output);
 
-// MWEB: Returns true if the GenericOutput is a peg-in output (LTC->MWEB)
-bool IsPegInOutput(const GenericOutput& output);
+// MWEB: Returns true if the CTxOut is a peg-in output (LTC->MWEB)
+bool IsPegInOutput(const CTxOut& output);
 
 // MWEB: Builds a segwit version 9 (MWEB) script for pegging in to an MWEB transaction with the given kernel ID.
 CScript GetScriptForPegin(const mw::Hash& kernel_id);

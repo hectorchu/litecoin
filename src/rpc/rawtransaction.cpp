@@ -1720,13 +1720,6 @@ static RPCHelpMan utxoupdatepsbt()
 {
     RPCTypeCheck(request.params, {UniValue::VSTR, UniValue::VARR}, true);
 
-    // Unserialize the transactions
-    //PartiallySignedTransaction psbtx;
-    //std::string error;
-    //if (!DecodeBase64PSBT(psbtx, request.params[0].get_str(), error)) {
-    //    throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", error));
-    //}
-
     // Parse descriptors, if any.
     FlatSigningProvider provider;
     if (!request.params[1].isNull()) {
@@ -1735,53 +1728,6 @@ static RPCHelpMan utxoupdatepsbt()
             EvalDescriptorStringOrObject(descs[i], provider);
         }
     }
-    //// We don't actually need private keys further on; hide them as a precaution.
-    //HidingSigningProvider public_provider(&provider, /*hide_secret=*/true, /*hide_origin=*/false);
-
-    //// Fetch previous transactions (inputs):
-    //CCoinsView viewDummy;
-    //CCoinsViewCache view(&viewDummy);
-    //{
-    //    NodeContext& node = EnsureAnyNodeContext(request.context);
-    //    const CTxMemPool& mempool = EnsureMemPool(node);
-    //    ChainstateManager& chainman = EnsureChainman(node);
-    //    LOCK2(cs_main, mempool.cs);
-    //    CCoinsViewCache &viewChain = chainman.ActiveChainstate().CoinsTip();
-    //    CCoinsViewMemPool viewMempool(&viewChain, mempool);
-    //    view.SetBackend(viewMempool); // temporarily switch cache backend to db+mempool view
-
-    //    for (const PSBTInput& input : psbtx.inputs) {
-    //        view.AccessCoin(input.GetOutPoint()); // Load entries from viewChain into view; can fail.
-    //    }
-
-    //    view.SetBackend(viewDummy); // switch back to avoid locking mempool for too long
-    //}
-
-    //// Fill the inputs
-    //const PrecomputedTransactionData txdata = PrecomputePSBTData(psbtx);
-    //for (unsigned int i = 0; i < psbtx.inputs.size(); ++i) {
-    //    PSBTInput& input = psbtx.inputs.at(i);
-
-    //    if (input.non_witness_utxo || !input.witness_utxo.IsNull()) {
-    //        continue;
-    //    }
-
-    //    const Coin& coin = view.AccessCoin(input.GetOutPoint());
-
-    //    if (IsSegWitOutput(provider, coin.out.scriptPubKey)) {
-    //        input.witness_utxo = coin.out;
-    //    }
-
-    //    // Update script/keypath information using descriptor data.
-    //    // Note that SignPSBTInput does a lot more than just constructing ECDSA signatures
-    //    // we don't actually care about those here, in fact.
-    //    SignPSBTInput(public_provider, psbtx, i, &txdata, /*sighash=*/1);
-    //}
-
-    //// Update script/keypath information using descriptor data.
-    //for (unsigned int i = 0; i < psbtx.outputs.size(); ++i) {
-    //    UpdatePSBTOutput(public_provider, psbtx, i);
-    //}
 
     const PartiallySignedTransaction psbtx = ProcessPSBT(
         request.params[0].get_str(),
@@ -1861,7 +1807,7 @@ static RPCHelpMan joinpsbts()
     for (auto& psbt : psbtxs) {
         for (unsigned int i = 0; i < psbt.inputs.size(); ++i) {
             if (!merged_psbt.AddInput(psbt.inputs[i])) {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Input %s exists in multiple PSBTs", psbt.inputs[i].ToGenericInput().ToString()));
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Input %s exists in multiple PSBTs", psbt.inputs[i].GetID().ToString()));
             }
         }
         for (unsigned int i = 0; i < psbt.outputs.size(); ++i) {

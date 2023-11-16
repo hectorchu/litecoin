@@ -940,14 +940,14 @@ bool CWallet::MarkReplaced(const uint256& originalHash, const uint256& newHash)
     return success;
 }
 
-void CWallet::SetSpentKeyState(WalletBatch& batch, const GenericOutputID& output_idx, bool used, std::set<CTxDestination>& tx_destinations)
+void CWallet::SetSpentKeyState(WalletBatch& batch, const GenericOutputID& output_id, bool used, std::set<CTxDestination>& tx_destinations)
 {
     AssertLockHeld(cs_wallet);
-    const CWalletTx* srctx = FindWalletTx(output_idx);
+    const CWalletTx* srctx = FindWalletTx(output_id);
     if (!srctx) return;
 
     CTxDestination dst;
-    if (ExtractOutputDestination(srctx->tx->GetOutput(output_idx), dst)) {
+    if (ExtractOutputDestination(*srctx, output_id, dst)) {
         if (IsMine(dst)) {
             if (used != IsAddressUsed(dst)) {
                 if (used) {
@@ -959,25 +959,30 @@ void CWallet::SetSpentKeyState(WalletBatch& batch, const GenericOutputID& output
     }
 }
 
-bool CWallet::IsSpentKey(const GenericOutput& output) const
+bool CWallet::IsSpentKey(const CWalletTx& wtx, const GenericOutputID& output_id) const
 {
     AssertLockHeld(cs_wallet);
     CTxDestination dest;
-    if (!ExtractOutputDestination(output, dest)) {
+    if (!ExtractOutputDestination(wtx, output_id, dest)) {
         return false;
     }
+
+    return IsSpentKey(dest);
+}
+
+bool CWallet::IsSpentKey(const CTxDestination& dest) const
+{
+    AssertLockHeld(cs_wallet);
+
     if (IsAddressUsed(dest)) {
         return true;
     }
 
-    GenericAddress dest_addr;
-    if (!ExtractDestinationScript(output, dest_addr)) {
-        return false;
-    }
+    GenericAddress output_address(dest);
     if (IsLegacy()) {
         LegacyScriptPubKeyMan* spk_man = GetLegacyScriptPubKeyMan();
         assert(spk_man != nullptr);
-        for (const auto& keyid : GetAffectedKeys(dest_addr, *spk_man)) {
+        for (const auto& keyid : GetAffectedKeys(output_address, *spk_man)) {
             WitnessV0KeyHash wpkh_dest(keyid);
             if (IsAddressUsed(wpkh_dest)) {
                 return true;
@@ -1197,9 +1202,9 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransactionRef& ptx, const std::op
 
             // Find all used output addresses
             std::vector<GenericAddress> used_addresses;
-            for (const GenericOutput& output : wtx.GetOutputs()) {
+            for (const GenericOutputID& output_id : wtx.GetOutputIDs(true)) {
                 CTxDestination output_dest;
-                if (!ExtractOutputDestination(output, output_dest)) {
+                if (!ExtractOutputDestination(wtx, output_id, output_dest)) {
                     continue;
                 }
 
@@ -1646,14 +1651,20 @@ bool CWallet::IsMine(const CTransaction& tx, const std::optional<MWEB::WalletTxI
     return false;
 }
 
-isminetype CWallet::IsMine(const GenericOutputID& idx) const
+isminetype CWallet::IsMine(const GenericOutputID& output_id) const
 {
     AssertLockHeld(cs_wallet);
-    auto wtx = FindWalletTx(idx);
+    auto wtx = FindWalletTx(output_id);
     if (!wtx) {
         return ISMINE_NO;
     }
-    return IsMine(wtx->tx->GetOutput(idx));
+
+    if (output_id.IsMWEB()) {
+        mw::Coin coin;
+        return GetCoin(output_id.ToMWEB(), coin) && coin.IsMine() ? ISMINE_SPENDABLE : ISMINE_NO;
+    }
+
+    return IsMine(GenericAddress(wtx->tx->vout[output_id.ToOutPoint().n].scriptPubKey));
 }
 
 bool CWallet::IsFromMe(const CTransaction& tx, const std::optional<MWEB::WalletTxInfo>& mweb_wtx_info) const
@@ -2335,7 +2346,7 @@ TransactionError CWallet::FillPSBT(PartiallySignedTransaction& psbtx, bool& comp
 
         // If we have no utxo, grab it from the wallet.
         if (!input.non_witness_utxo) {
-            const CWalletTx* prev_tx = FindPrevTx(input.ToGenericInput());
+            const CWalletTx* prev_tx = FindWalletTx(input.GetID());
             if (prev_tx != nullptr) {
                 // We only need the non_witness_utxo, which is a superset of the witness_utxo.
                 //   The signing code will switch to the smaller witness_utxo if this is ok.
@@ -2840,9 +2851,9 @@ void CWallet::GetKeyBirthTimes(std::map<CKeyID, int64_t>& mapKeyBirth) const {
             const CWalletTx &wtx = entry.second;
             if (auto* conf = wtx.state<TxStateConfirmed>()) {
                 // ... which are already in a block
-                for (const GenericOutput& output : wtx.GetOutputs()) {
+                for (const GenericOutputID& output_id : wtx.GetOutputIDs()) {
                     GenericAddress dest_addr;
-                    if (!ExtractDestinationScript(output, dest_addr)) {
+                    if (!ExtractOutputAddress(wtx, output_id, dest_addr)) {
                         continue;
                     }
 
@@ -3714,7 +3725,7 @@ void CWallet::SetupDescriptorScriptPubKeyMans(const CExtKey& master_key)
                 }
             }
             if (t == OutputType::MWEB) {
-                continue; // MW: TODO - Don't skip MWEB once we support desciptors
+                continue; // MW: TODO - Don't skip MWEB once we support descriptors
             }
 
             spk_manager->SetupDescriptorGeneration(master_key, t, internal);
@@ -4397,6 +4408,23 @@ bool CWallet::GetCoin(const mw::Hash& output_id, mw::Coin& coin) const
     return mweb_wallet->GetCoin(output_id, coin);
 }
 
+CAmount CWallet::GetValue(const CWalletTx& wtx, const GenericOutputID& output_id) const
+{
+    if (output_id.IsMWEB()) {
+        mw::Coin coin;
+        if (GetCoin(output_id.ToMWEB(), coin)) {
+            return coin.amount;
+        }
+    } else {
+        const COutPoint& outpoint = output_id.ToOutPoint();
+        if (wtx.tx->vout.size() > outpoint.n) {
+            return wtx.tx->vout[outpoint.n].nValue;
+        }
+    }
+
+    return 0;
+}
+
 CAmount CWallet::GetValue(const GenericOutputID& output_id) const
 {
     if (output_id.IsMWEB()) {
@@ -4405,9 +4433,10 @@ CAmount CWallet::GetValue(const GenericOutputID& output_id) const
             return coin.amount;
         }
     } else {
-        const CWalletTx* wtx = FindWalletTx(output_id);
-        if (wtx && wtx->HasOutput(output_id)) {
-            return wtx->GetOutput(output_id).GetTxOut().nValue;
+        const COutPoint& outpoint = output_id.ToOutPoint();
+        const CWalletTx* wtx = FindWalletTx(outpoint);
+        if (wtx && wtx->tx->vout.size() > outpoint.n) {
+            return wtx->tx->vout[outpoint.n].nValue;
         }
     }
 
@@ -4428,11 +4457,24 @@ CAmount CWallet::GetValue(const GenericOutput& output) const
     return 0;
 }
 
-bool CWallet::ExtractOutputDestination(const GenericOutput& output, CTxDestination& dest) const
+std::optional<StealthAddress> CWallet::ExtractStealthAddress(const mw::Hash& output_id) const
 {
-    if (output.IsMWEB()) {
+    mw::Coin coin;
+    if (GetCoin(output_id, coin)) {
+        StealthAddress address;
+        if (mweb_wallet->GetStealthAddress(coin, address)) {
+            return address;
+        }
+    }
+
+    return std::nullopt;
+}
+
+bool CWallet::ExtractOutputDestination(const CWalletTx& wtx, const GenericOutputID& output_id, CTxDestination& dest) const
+{
+    if (output_id.IsMWEB()) {
         mw::Coin coin;
-        if (!GetCoin(output.ToMWEBOutputID(), coin)) {
+        if (!GetCoin(output_id.ToMWEB(), coin)) {
             return false;
         }
 
@@ -4444,15 +4486,15 @@ bool CWallet::ExtractOutputDestination(const GenericOutput& output, CTxDestinati
         dest = address;
         return true;
     } else {
-        return ExtractDestination(output.GetScriptPubKey(), dest);
+        return ExtractDestination(wtx.tx->vout[output_id.ToOutPoint().n].scriptPubKey, dest);
     }
 }
 
-bool CWallet::ExtractDestinationScript(const GenericOutput& output, GenericAddress& dest) const
+bool CWallet::ExtractOutputAddress(const CWalletTx& wtx, const GenericOutputID& output_id, GenericAddress& dest) const
 {
-    if (output.IsMWEB()) {
+    if (output_id.IsMWEB()) {
         mw::Coin coin;
-        if (!GetCoin(output.ToMWEBOutputID(), coin)) {
+        if (!GetCoin(output_id.ToMWEB(), coin)) {
             return false;
         }
 
@@ -4464,7 +4506,7 @@ bool CWallet::ExtractDestinationScript(const GenericOutput& output, GenericAddre
         dest = address;
         return true;
     } else {
-        dest = GenericAddress(output.GetScriptPubKey());
+        dest = GenericAddress(wtx.tx->vout[output_id.ToOutPoint().n].scriptPubKey);
     }
 
     return true;

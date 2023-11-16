@@ -17,12 +17,11 @@ struct SignTxResult
 };
 
 /// <summary>
-/// Finalizes a MutableTx by generating all excesses, pubkeys, signatures, etc.
+/// Finalizes the MWEB tx in the CMutableTransaction provided by generating all excesses, pubkeys, signatures, etc.
 /// </summary>
-/// <param name="tx">A MutableTx containing all inputs, kernels, and outputs. Components can be stubs (unsigned) or already finalized/signed.</param>
-/// <param name="input_coins"></param>
+/// <param name="tx">A CMutableTransaction containing an MWEB tx with all inputs, kernels, and outputs. Components can be stubs (unsigned) or already finalized/signed.</param>
 /// <returns></returns>
 // MW: TODO - Probably needs wallet ptr or some kind of signing provider to generate secrets.
-extern util::Result<mw::SignTxResult> SignTx(mw::MutableTx& tx, const std::map<mw::Hash, mw::Coin>& input_coins) noexcept;
+extern util::Result<mw::SignTxResult> SignTx(CMutableTransaction& tx) noexcept;
 
 END_NAMESPACE

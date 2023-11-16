@@ -240,19 +240,19 @@ Result CreateRateBumpTransaction(CWallet& wallet, const uint256& txid, const CCo
     // While we're here, calculate the output amount
     std::vector<CRecipient> recipients;
     CAmount output_value = 0;
-    for (const auto& output : wtx.GetOutputs()) {
+    for (const GenericOutputID& output_id : wtx.GetOutputIDs(false)) {
         GenericAddress dest_addr;
-        if (!wallet.ExtractDestinationScript(output, dest_addr)) {
+        if (!wallet.ExtractOutputAddress(wtx, output_id, dest_addr)) {
             return Result::INVALID_ADDRESS_OR_KEY;
         }
 
-        if (!OutputIsChange(wallet, output)) {
-            CRecipient recipient = {dest_addr, wallet.GetValue(output), false};
+        if (!OutputIsChange(wallet, wtx, output_id)) {
+            CRecipient recipient = {dest_addr, wallet.GetValue(wtx, output_id), false};
             recipients.push_back(recipient);
         } else {
             dest_addr.ExtractDestination(new_coin_control.destChange);
         }
-        output_value += wallet.GetValue(output);
+        output_value += wallet.GetValue(wtx, output_id);
     }
 
     old_fee = input_value - output_value;
@@ -303,7 +303,7 @@ Result CreateRateBumpTransaction(CWallet& wallet, const uint256& txid, const CCo
     new_fee = txr.fee;
 
     // Write back transaction
-    mtx = CMutableTransaction(*txr.tx);
+    mtx = txr.tx;
 
     return Result::OK;
 }

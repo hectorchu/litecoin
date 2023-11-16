@@ -37,11 +37,12 @@ bool Miner::AddMWEBTransaction(CTxMemPool::txiter iter)
     }
 
     for (size_t nOut = 0; nOut < pTx->vout.size(); nOut++) {
-        if (IsPegInOutput(pTx->GetOutput(nOut))) {
+        const CTxOut& txout = pTx->vout[nOut];
+        if (IsPegInOutput(txout)) {
             vin.push_back(CTxIn{pTx->GetHash(), (uint32_t)nOut});
 
-            assert(MoneyRange(pTx->vout[nOut].nValue));
-            pegin_amount += pTx->vout[nOut].nValue;
+            assert(MoneyRange(txout.nValue));
+            pegin_amount += txout.nValue;
 
             if (!MoneyRange(pegin_amount)) {
                 LogPrintf("Invalid total peg-in amount\n");

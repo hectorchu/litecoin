@@ -18,7 +18,6 @@ class CCoinControl;
 class CWallet;
 
 struct FundTransactionResult {
-    CTransactionRef tx;
     CAmount fee;
     ChangePosition change_pos;
 };

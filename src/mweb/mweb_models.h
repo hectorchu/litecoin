@@ -101,6 +101,11 @@ struct Block {
 
     bool IsNull() const noexcept { return m_block == nullptr; }
     void SetNull() noexcept { m_block.reset(); }
+
+    std::string ToString() const
+    {
+        return IsNull() ? "" : m_block->Format();
+    }
 };
 
 /// <summary>
@@ -234,9 +239,7 @@ struct Tx {
             return mw::MutableTx{};
         }
 
-        mw::MutableTx mutable_tx{};
-        mutable_tx.Apply(*m_transaction);
-        return mutable_tx;
+        return mw::MutableTx::From(*m_transaction);
     }
 
     SERIALIZE_METHODS(Tx, obj)

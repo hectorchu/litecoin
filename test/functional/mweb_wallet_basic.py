@@ -48,8 +48,7 @@ class MWEBWalletBasicTest(LitecoinTestFramework):
         assert node1.getbalances()['mine']['trusted'] == 0
         
         self.log.info("Mine the next block")
-        node0.generate(1)
-        self.sync_blocks()
+        self.generate(node0, 1, sync_fun=self.sync_blocks)
         
         self.log.info("Verify node1's wallet lists the transaction as confirmed")
         n1_addr_coins = node1.listunspent(addresses=[n1_addr])
@@ -106,8 +105,7 @@ class MWEBWalletBasicTest(LitecoinTestFramework):
         assert tx3_id in node1.getrawmempool()
 
         self.log.info("Mine next block to make sure the transactions confirm successfully")
-        node0.generate(1)
-        self.sync_all()
+        self.generate(node0, 1, sync_fun=self.sync_all)
         assert tx2_id not in node1.getrawmempool()
         assert tx3_id not in node1.getrawmempool()        
 

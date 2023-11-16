@@ -579,7 +579,7 @@ RPCHelpMan getaddressinfo()
     std::string currentAddress = EncodeDestination(dest);
     ret.pushKV("address", currentAddress);
 
-    CScript scriptPubKey = GetScriptForDestination(dest);
+    CScript scriptPubKey = GetScriptForDestination(dest); // MW: TODO - Support stealth addresses
     ret.pushKV("scriptPubKey", HexStr(scriptPubKey));
 
     std::unique_ptr<SigningProvider> provider = pwallet->GetSolvingProvider(scriptPubKey);

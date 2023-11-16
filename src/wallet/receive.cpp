@@ -35,34 +35,27 @@ bool AllInputsMine(const CWallet& wallet, const CWalletTx& wtx, const isminefilt
     return true;
 }
 
-CAmount OutputGetCredit(const CWallet& wallet, const GenericOutput& output, const isminefilter& filter)
+CAmount OutputGetCredit(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_id, const isminefilter& filter)
 {
-    CAmount amount = wallet.GetValue(output);
+    CAmount amount = wallet.GetValue(wtx, output_id);
     if (!MoneyRange(amount))
         throw std::runtime_error(std::string(__func__) + ": value out of range");
     LOCK(wallet.cs_wallet);
-    return ((wallet.IsMine(output) & filter) ? amount : 0);
+    return ((wallet.IsMine(output_id) & filter) ? amount : 0);
 }
 
-CAmount TxGetCredit(const CWallet& wallet, const CTransaction& tx, const std::optional<MWEB::WalletTxInfo>& mweb_wtx_info, const isminefilter& filter)
+CAmount TxGetCredit(const CWallet& wallet, const CWalletTx& wtx, const isminefilter& filter)
 {
     CAmount nCredit = 0;
-    for (const GenericOutput& output : tx.GetOutputs())
+    for (const GenericOutputID& output_id : wtx.GetOutputIDs(true))
     {
-        nCredit += OutputGetCredit(wallet, output, filter);
-        if (!MoneyRange(nCredit))
-            throw std::runtime_error(std::string(__func__) + ": value out of range");
-    }
-
-    if (mweb_wtx_info && mweb_wtx_info->received_coin) {
-        const isminetype ismine = mweb_wtx_info->received_coin->IsMine() ? ISMINE_SPENDABLE : ISMINE_NO;
-        nCredit += (ismine & filter) ? mweb_wtx_info->received_coin->amount : 0;
+        nCredit += OutputGetCredit(wallet, wtx, output_id, filter);
         if (!MoneyRange(nCredit))
             throw std::runtime_error(std::string(__func__) + ": value out of range");
     }
 
     bool has_my_inputs = false;
-    for (const GenericInput& txin : tx.GetInputs()) {
+    for (const GenericInput& txin : wtx.GetInputs()) {
         LOCK(wallet.cs_wallet);
         if (InputIsMine(wallet, txin)) {
             has_my_inputs = true;
@@ -71,7 +64,7 @@ CAmount TxGetCredit(const CWallet& wallet, const CTransaction& tx, const std::op
     }
 
     if (!has_my_inputs) {
-        for (const PegOutCoin& pegout : tx.mweb_tx.GetPegOuts()) {
+        for (const PegOutCoin& pegout : wtx.tx->mweb_tx.GetPegOuts()) {
             LOCK(wallet.cs_wallet);
             if (!(wallet.IsMine(pegout.GetScriptPubKey()) & filter)) {
                 nCredit += pegout.GetAmount();
@@ -106,47 +99,41 @@ bool ScriptIsChange(const CWallet& wallet, const CScript& script)
     return false;
 }
 
-bool OutputIsChange(const CWallet& wallet, const GenericOutput& output)
+bool OutputIsChange(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_id)
 {
     AssertLockHeld(wallet.cs_wallet);
-    if (output.IsMWEB()) {
+    if (output_id.IsMWEB()) {
         mw::Coin coin;
-        if (wallet.GetCoin(output.ToMWEBOutputID(), coin)) {
+        if (wallet.GetCoin(output_id.ToMWEB(), coin)) {
             return coin.IsChange();
         }
 
         return false;
     }
 
-    return ScriptIsChange(wallet, output.GetScriptPubKey());
+    return ScriptIsChange(wallet, wtx.tx->vout[output_id.ToOutPoint().n].scriptPubKey);
 }
 
-CAmount OutputGetChange(const CWallet& wallet, const GenericOutput& output)
+CAmount OutputGetChange(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_id)
 {
     AssertLockHeld(wallet.cs_wallet);
-    const CAmount amount = wallet.GetValue(output);
+    const CAmount amount = wallet.GetValue(wtx, output_id);
     if (!MoneyRange(amount))
         throw std::runtime_error(std::string(__func__) + ": value out of range");
-    return (OutputIsChange(wallet, output) ? amount : 0);
+    return (OutputIsChange(wallet, wtx, output_id) ? amount : 0);
 }
 
-CAmount TxGetChange(const CWallet& wallet, const CTransaction& tx, const std::optional<MWEB::WalletTxInfo>& mweb_wtx_info)
+CAmount TxGetChange(const CWallet& wallet, const CWalletTx& wtx)
 {
     LOCK(wallet.cs_wallet);
     CAmount nChange = 0;
-    for (const GenericOutput& output : tx.GetOutputs()) {
-        nChange += OutputGetChange(wallet, output);
+    for (const GenericOutputID& output_id : wtx.GetOutputIDs()) {
+        nChange += OutputGetChange(wallet, wtx, output_id);
         if (!MoneyRange(nChange))
             throw std::runtime_error(std::string(__func__) + ": value out of range");
     }
 
-    if (mweb_wtx_info && mweb_wtx_info->received_coin) {
-        nChange += mweb_wtx_info->received_coin->IsChange() ? mweb_wtx_info->received_coin->amount : 0;
-        if (!MoneyRange(nChange))
-            throw std::runtime_error(std::string(__func__) + ": value out of range");
-    }
-
-    for (const PegOutCoin& pegout : tx.mweb_tx.GetPegOuts()) {
+    for (const PegOutCoin& pegout : wtx.tx->mweb_tx.GetPegOuts()) {
         if (ScriptIsChange(wallet, pegout.GetScriptPubKey())) {
             nChange += pegout.GetAmount();
             if (!MoneyRange(nChange))
@@ -162,7 +149,7 @@ static CAmount GetCachableAmount(const CWallet& wallet, const CWalletTx& wtx, CW
 {
     auto& amount = wtx.m_amounts[type];
     if (!amount.m_cached[filter]) {
-        amount.Set(filter, type == CWalletTx::DEBIT ? wallet.GetDebit(*wtx.tx, wtx.mweb_wtx_info, filter) : TxGetCredit(wallet, *wtx.tx, wtx.mweb_wtx_info, filter));
+        amount.Set(filter, type == CWalletTx::DEBIT ? wallet.GetDebit(*wtx.tx, wtx.mweb_wtx_info, filter) : TxGetCredit(wallet, wtx, filter)); // MW: TODO - What about IMMATURE_CREDIT, AVAILABLE_CREDIT, and FEE?
         wtx.m_is_cache_empty = false;
     }
     return amount.m_value[filter];
@@ -202,7 +189,7 @@ CAmount CachedTxGetChange(const CWallet& wallet, const CWalletTx& wtx)
 {
     if (wtx.fChangeCached)
         return wtx.nChangeCached;
-    wtx.nChangeCached = TxGetChange(wallet, *wtx.tx, wtx.mweb_wtx_info);
+    wtx.nChangeCached = TxGetChange(wallet, wtx);
     wtx.fChangeCached = true;
     return wtx.nChangeCached;
 }
@@ -235,9 +222,9 @@ CAmount CachedTxGetAvailableCredit(const CWallet& wallet, const CWalletTx& wtx, 
 
     bool allow_used_addresses = (filter & ISMINE_USED) || !wallet.IsWalletFlagSet(WALLET_FLAG_AVOID_REUSE);
     CAmount nCredit = 0;
-    for (const GenericOutput& output : wtx.GetOutputs()) {
-        if (!wallet.IsSpent(output.GetID()) && (allow_used_addresses || !wallet.IsSpentKey(output))) {
-            nCredit += OutputGetCredit(wallet, output, filter);
+    for (const GenericOutputID& output_id : wtx.GetOutputIDs(true)) {
+        if (!wallet.IsSpent(output_id) && (allow_used_addresses || !wallet.IsSpentKey(wtx, output_id))) {
+            nCredit += OutputGetCredit(wallet, wtx, output_id, filter);
             if (!MoneyRange(nCredit))
                 throw std::runtime_error(std::string(__func__) + " : value out of range");
         }
@@ -249,6 +236,47 @@ CAmount CachedTxGetAvailableCredit(const CWallet& wallet, const CWalletTx& wtx, 
     }
 
     return nCredit;
+}
+
+CAmount CachedTxGetFee(const CWallet& wallet, const CWalletTx& wtx, const isminefilter& filter)
+{
+    if (wtx.m_amounts[CWalletTx::FEE].m_cached[filter]) {
+        return wtx.m_amounts[CWalletTx::FEE].m_value[filter];
+    }
+
+    CAmount nFee = 0;
+
+    CAmount nDebit = CachedTxGetDebit(wallet, wtx, filter);
+    // debit>0 means we signed/sent this transaction
+    if (nDebit > 0) {
+        CAmount nValueOut = 0;
+        for (const GenericOutputID& output_id : wtx.GetOutputIDs(true)) {
+            if (!output_id.IsMWEB() && IsPegInOutput(wtx.tx->vout[output_id.ToOutPoint().n])) {
+                continue;
+            }
+
+            nValueOut += wallet.GetValue(wtx, output_id);
+        }
+
+        if (wtx.mweb_wtx_info && wtx.mweb_wtx_info->received_coin) {
+            nValueOut += wtx.mweb_wtx_info->received_coin->amount;
+        }
+
+        for (const PegOutCoin& pegout : wtx.tx->mweb_tx.GetPegOuts()) {
+            nValueOut += pegout.GetAmount();
+        }
+
+        nFee = nDebit - nValueOut;
+    }
+
+    // Avoid caching ismine for NO or ALL cases (could remove this check and simplify in the future).
+    bool allow_cache = (filter & ISMINE_ALL) && (filter & ISMINE_ALL) != ISMINE_ALL;
+    if (allow_cache) {
+        wtx.m_amounts[CWalletTx::FEE].Set(filter, nFee);
+        wtx.m_is_cache_empty = false;
+    }
+
+    return nFee;
 }
 
 void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
@@ -270,15 +298,15 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
 
     LOCK(wallet.cs_wallet);
     // Sent/received.
-    for (const GenericOutput& output : wtx.GetOutputs())
+    for (const GenericOutputID& output_id : wtx.GetOutputIDs(true))
     {
-        isminetype fIsMine = wallet.IsMine(output);
+        isminetype fIsMine = wallet.IsMine(output_id);
         // Only need to handle txouts if AT LEAST one of these is true:
         //   1) they debit from us (sent)
         //   2) the output is to us (received)
         if (nDebit > 0)
         {
-            if (!include_change && OutputIsChange(wallet, output))
+            if (!include_change && OutputIsChange(wallet, wtx, output_id))
                 continue;
         }
         else if (!(fIsMine & filter))
@@ -287,14 +315,14 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
         // In either case, we need to get the destination address
         CTxDestination address;
 
-        if (!wallet.ExtractOutputDestination(output, address) && (output.IsMWEB() || !output.GetScriptPubKey().IsUnspendable()))
+        if (!wallet.ExtractOutputDestination(wtx, output_id, address) && (output_id.IsMWEB() || !wtx.tx->vout[output_id.ToOutPoint().n].scriptPubKey.IsUnspendable()))
         {
             wallet.WalletLogPrintf("CWalletTx::GetAmounts: Unknown transaction type found, txid %s\n",
                                     wtx.GetHash().ToString());
             address = CNoDestination();
         }
 
-        COutputEntry output_entry = {address, wallet.GetValue(output), output.GetID()};
+        COutputEntry output_entry = {address, wallet.GetValue(wtx, output_id), output_id};
 
         // If we are debited by the transaction, add the output as a "sent" entry
         if (nDebit > 0)
@@ -361,9 +389,8 @@ bool CachedTxIsTrusted(const CWallet& wallet, const CWalletTx& wtx, std::set<uin
         // Transactions not sent by us: not trusted
         const CWalletTx* parent = wallet.FindPrevTx(input);
         if (parent == nullptr) return false;
-        GenericOutput parentOut = parent->tx->GetOutput(input.GetID());
         // Check that this specific input being spent is trusted
-        if (wallet.IsMine(parentOut) != ISMINE_SPENDABLE) return false;
+        if (wallet.IsMine(input.GetID()) != ISMINE_SPENDABLE) return false;
         // If we've already trusted this parent, continue
         if (trusted_parents.count(parent->GetHash())) continue;
         // Recurse to check that the parent is also trusted
@@ -430,14 +457,14 @@ std::map<CTxDestination, CAmount> GetAddressBalances(const CWallet& wallet)
             if (nDepth < (CachedTxIsFromMe(wallet, wtx, ISMINE_ALL) ? 0 : 1))
                 continue;
 
-            for (const GenericOutput& output : wtx.GetOutputs()) {
+            for (const GenericOutputID& output_id : wtx.GetOutputIDs(true)) {
                 CTxDestination addr;
-                if (!wallet.IsMine(output))
+                if (!wallet.IsMine(output_id))
                     continue;
-                if(!wallet.ExtractOutputDestination(output, addr))
+                if (!wallet.ExtractOutputDestination(wtx, output_id, addr))
                     continue;
 
-                CAmount n = wallet.IsSpent(output.GetID()) ? 0 : wallet.GetValue(output);
+                CAmount n = wallet.IsSpent(output_id) ? 0 : wallet.GetValue(wtx, output_id);
                 balances[addr] += n;
             }
         }
@@ -456,19 +483,20 @@ std::set< std::set<CTxDestination> > GetAddressGroupings(const CWallet& wallet)
     {
         const CWalletTx& wtx = walletEntry.second;
 
-        if (wtx.GetInputs().size() > 0)
+        std::vector<GenericInput> inputs = wtx.GetInputs();
+        if (inputs.size() > 0)
         {
             bool any_mine = false;
             // group all input addresses with each other
-            for (const GenericInput& input : wtx.GetInputs())
+            for (const GenericInput& input : inputs)
             {
                 CTxDestination address;
-                if(!InputIsMine(wallet, input)) /* If this input isn't mine, ignore it */
+                if (!InputIsMine(wallet, input)) /* If this input isn't mine, ignore it */
                     continue;
                 const CWalletTx* prev = wallet.FindPrevTx(input);
                 if (!prev)
                     continue;
-                if(!wallet.ExtractOutputDestination(prev->tx->GetOutput(input.GetID()), address))
+                if (!wallet.ExtractOutputDestination(*prev, input.GetID(), address))
                     continue;
                 grouping.insert(address);
                 any_mine = true;
@@ -477,14 +505,14 @@ std::set< std::set<CTxDestination> > GetAddressGroupings(const CWallet& wallet)
             // group change with input addresses
             if (any_mine)
             {
-               for (const GenericOutput& output : wtx.GetOutputs())
-                   if (OutputIsChange(wallet, output))
-                   {
-                       CTxDestination txoutAddr;
-                       if(!wallet.ExtractOutputDestination(output, txoutAddr))
-                           continue;
-                       grouping.insert(txoutAddr);
-                   }
+                for (const GenericOutputID& output_id : wtx.GetOutputIDs(true)) {
+                    if (OutputIsChange(wallet, wtx, output_id)) {
+                        CTxDestination address;
+                        if (!wallet.ExtractOutputDestination(wtx, output_id, address))
+                            continue;
+                        grouping.insert(address);
+                    }
+                }
             }
             if (grouping.size() > 0)
             {
@@ -494,10 +522,10 @@ std::set< std::set<CTxDestination> > GetAddressGroupings(const CWallet& wallet)
         }
 
         // group lone addrs by themselves
-        for (const GenericOutput& output : wtx.GetOutputs()) {
-            if (wallet.IsMine(output)) {
+        for (const GenericOutputID& output_id : wtx.GetOutputIDs(true)) {
+            if (wallet.IsMine(output_id)) {
                 CTxDestination address;
-                if (!wallet.ExtractOutputDestination(output, address))
+                if (!wallet.ExtractOutputDestination(wtx, output_id, address))
                    continue;
                 grouping.insert(address);
                 groupings.insert(grouping);

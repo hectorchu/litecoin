@@ -783,6 +783,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     m_view.SetBackend(m_viewmempool);
 
     const CCoinsViewCache& coins_cache = m_active_chainstate.CoinsTip();
+
     // do all inputs exist?
     for (const GenericInput& txin : tx.GetInputs()) {
         if (!coins_cache.HaveCoinInCache(txin.GetID())) {
@@ -812,7 +813,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     // we have all inputs cached now, so switch back to dummy (to protect
     // against bugs where we pull more inputs from disk that miss being added
     // to coins_to_uncache)
-    m_view.SetBackend(m_dummy);
+    // MW: TODO - m_view.SetBackend(m_dummy);
 
     assert(m_active_chainstate.m_blockman.LookupBlockIndex(m_view.GetBestBlock()) == m_active_chainstate.m_chain.Tip());
 
@@ -1455,8 +1456,8 @@ MempoolAcceptResult AcceptToMemoryPool(Chainstate& active_chainstate, const CTra
         // number of invalid transactions that attempt to overrun the in-memory coins cache
         // (`CCoinsViewCache::cacheCoins`).
 
-        for (const GenericOutputID& hashTx : coins_to_uncache)
-            active_chainstate.CoinsTip().Uncache(hashTx);
+        for (const GenericOutputID& output_id : coins_to_uncache)
+            active_chainstate.CoinsTip().Uncache(output_id);
     }
     // After we've (potentially) uncached entries, ensure our coins cache is still within its size limits
     BlockValidationState state_dummy;
@@ -1486,8 +1487,8 @@ PackageMempoolAcceptResult ProcessNewPackage(Chainstate& active_chainstate, CTxM
 
     // Uncache coins pertaining to transactions that were not submitted to the mempool.
     if (test_accept || result.m_state.IsInvalid()) {
-        for (const GenericOutputID& hashTx : coins_to_uncache) {
-            active_chainstate.CoinsTip().Uncache(hashTx);
+        for (const GenericOutputID& output_id : coins_to_uncache) {
+            active_chainstate.CoinsTip().Uncache(output_id);
         }
     }
     // Ensure the coins cache is still within limits.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mw/models/tx/Transaction.h>
+#include <mw/models/wallet/Coin.h>
 #include <mw/models/wallet/StealthAddress.h>
 #include <optional>
 
@@ -35,6 +36,21 @@ struct MutableInput {
         MutableInput input(output.GetOutputID());
         input.commitment = output.GetCommitment();
         input.output_pubkey = output.GetReceiverPubKey();
+        return input;
+    }
+
+    static MutableInput FromCoin(const mw::Coin& coin)
+    {
+        MutableInput input(coin.output_id);
+        input.amount = coin.amount;
+        input.raw_blind = coin.blind;
+        if (input.raw_blind.has_value()) {
+            input.commitment = Commitment::Switch(*input.raw_blind, coin.amount);
+        }
+        input.spend_key = coin.spend_key;
+        if (input.spend_key.has_value()) {
+            input.output_pubkey = PublicKey::From(*input.spend_key);
+        }
         return input;
     }
 
@@ -88,13 +104,21 @@ struct MutableInput {
 
 struct MutableOutput {
     // MW: TODO: Could probably just be an optional Output and optional Recipient
-    std::optional<mw::Hash> output_id{};
     std::optional<Commitment> commitment{};
     std::optional<PublicKey> sender_pubkey{};
     std::optional<PublicKey> receiver_pubkey{};
     std::optional<mw::OutputMessage> message{};
     std::optional<RangeProof::CPtr> proof{};
     std::optional<Signature> signature{};
+
+    /*
+    std::optional<uint8_t> features;
+    std::optional<PublicKey> key_exchange_pubkey;
+    std::optional<uint8_t> view_tag;
+    std::optional<uint64_t> masked_value;
+    std::optional<BigInt<16>> masked_nonce;
+    std::vector<uint8_t> extra_data;
+    */
 
     std::optional<CAmount> amount{};
     std::optional<StealthAddress> address{};
@@ -103,8 +127,7 @@ struct MutableOutput {
 
     bool operator==(const MutableOutput& other) const noexcept
     {
-        return output_id == other.output_id &&
-               commitment == other.commitment &&
+        return commitment == other.commitment &&
                sender_pubkey == other.sender_pubkey &&
                receiver_pubkey == other.receiver_pubkey &&
                message == other.message &&
@@ -118,8 +141,7 @@ struct MutableOutput {
     // A finalized MutableOutput is one that has all public fields populated
     bool IsFinal() const noexcept
     {
-        return output_id.has_value() &&
-               commitment.has_value() &&
+        return commitment.has_value() &&
                sender_pubkey.has_value() &&
                receiver_pubkey.has_value() &&
                message.has_value() &&
@@ -137,10 +159,15 @@ struct MutableOutput {
         return std::nullopt;
     }
 
+    std::optional<mw::Hash> CalcOutputID() const noexcept
+    {
+        std::optional<mw::Output> output = Finalized();
+        return output.has_value() ? std::make_optional(output->GetOutputID()) : std::nullopt;
+    }
+
     // Updates the public fields of the MutableOutput to their finalized values.
     void Update(const mw::Output& finalized) noexcept
     {
-        output_id = finalized.GetOutputID();
         commitment = finalized.GetCommitment();
         sender_pubkey = finalized.GetSenderPubKey();
         receiver_pubkey = finalized.GetReceiverPubKey();
@@ -163,7 +190,6 @@ struct PegOutRecipient
 };
 
 struct MutableKernel {
-    std::optional<uint8_t> features;
     std::optional<CAmount> fee;
     std::optional<CAmount> pegin;
     std::vector<PegOutRecipient> pegouts;
@@ -177,8 +203,7 @@ struct MutableKernel {
 
     bool operator==(const MutableKernel& other) const noexcept
     {
-        return features == other.features &&
-               fee == other.fee &&
+        return fee == other.fee &&
                pegin == other.pegin &&
                pegouts == other.pegouts &&
                lock_height == other.lock_height &&
@@ -191,17 +216,26 @@ struct MutableKernel {
     // A finalized MutableKernel is one that has all public fields populated
     bool IsFinal() const noexcept
     {
-        // MW: FUTURE - Based on features, could check if pegin, pegouts, lock_height, stealth_excess, and extradata should be populated
-        return features.has_value() &&
-               excess.has_value() &&
-               signature.has_value();
+        return excess.has_value() && signature.has_value();
+    }
+
+    uint8_t CalcFeatureByte() const noexcept
+    {
+        uint8_t features = 0;
+        features |= fee.has_value() ? mw::Kernel::FEE_FEATURE_BIT : 0;
+        features |= pegin.has_value() ? mw::Kernel::PEGIN_FEATURE_BIT : 0;
+        features |= pegouts.size() > 0 ? mw::Kernel::PEGOUT_FEATURE_BIT : 0;
+        features |= lock_height.has_value() ? mw::Kernel::HEIGHT_LOCK_FEATURE_BIT : 0;
+        features |= stealth_excess.has_value() ? mw::Kernel::STEALTH_EXCESS_FEATURE_BIT : 0;
+        features |= extradata.size() > 0 ? mw::Kernel::EXTRA_DATA_FEATURE_BIT : 0;
+        return features;
     }
 
     // Returns the finalized (signed) mw::Kernel. Will be nullopt if kernel is not final.
     std::optional<mw::Kernel> Finalized() const noexcept
     {
         if (IsFinal()) {
-            return mw::Kernel(*features, fee, pegin, GetPegOuts(), lock_height, stealth_excess, extradata, *excess, *signature);
+            return mw::Kernel(CalcFeatureByte(), fee, pegin, GetPegOuts(), lock_height, stealth_excess, extradata, *excess, *signature);
         }
 
         return std::nullopt;
@@ -217,7 +251,6 @@ struct MutableKernel {
     // Updates the public fields of the MutableKernel to their finalized values.
     void Update(const mw::Kernel& finalized) noexcept
     {
-        features = finalized.m_features;
         fee = finalized.m_fee;
         pegin = finalized.m_pegin;
         SetPegOuts(finalized.m_pegouts);
@@ -256,6 +289,33 @@ struct MutableTx : public Traits::ISerializable
     std::vector<MutableInput> inputs;
     std::vector<MutableOutput> outputs;
     std::vector<MutableKernel> kernels; // MW: TODO - Just store fee, pegins, and pegouts here, rather than having mutable kernels?
+
+    static MutableTx From(const mw::Transaction& tx)
+    {
+        MutableTx mutable_tx{};
+        mutable_tx.kernel_offset = tx.GetKernelOffset();
+        mutable_tx.stealth_offset = tx.GetStealthOffset();
+
+        for (const Input& input : tx.GetInputs()) {
+            MutableInput mutable_input(input.GetOutputID());
+            mutable_input.Update(input);
+            mutable_tx.inputs.push_back(std::move(mutable_input));
+        }
+
+        for (const Output& output : tx.GetOutputs()) {
+            MutableOutput mutable_output{};
+            mutable_output.Update(output);
+            mutable_tx.outputs.push_back(std::move(mutable_output));
+        }
+
+        for (const Kernel& kernel : tx.GetKernels()) {
+            MutableKernel mutable_kernel{};
+            mutable_kernel.Update(kernel);
+            mutable_tx.kernels.push_back(std::move(mutable_kernel));
+        }
+
+        return mutable_tx;
+    }
 
     void SetFee(const CAmount fee) noexcept
     {
@@ -308,11 +368,16 @@ struct MutableTx : public Traits::ISerializable
         return pegouts;
     }
 
-    void Apply(const mw::Transaction& tx)
+    CAmount GetTotalPegoutAmount() const noexcept
     {
-        kernel_offset = tx.GetKernelOffset();
-        stealth_offset = tx.GetStealthOffset();
-        // MW: TODO - Finish this - Need maps for input, output, and kernel ordering
+        CAmount pegout_amount = 0;
+        for (const MutableKernel& kernel : kernels) {
+            for (const mw::PegOutRecipient& pegout : kernel.pegouts) {
+                pegout_amount += pegout.nAmount;
+            }
+        }
+
+        return pegout_amount;
     }
 
     bool operator==(const MutableTx& tx) const noexcept
@@ -336,28 +401,28 @@ struct MutableTx : public Traits::ISerializable
 
     bool IsFinal() const noexcept
     {
+        if (IsNull()) {
+            return true;
+        }
+
         if (kernels.empty()) {
-            LOG_INFO("Not final - kernels empty");
             return false;
         }
 
         for (const mw::MutableInput& input : inputs) {
             if (!input.IsFinal()) {
-                LOG_INFO("Not final - Non-final input");
                 return false;
             }
         }
 
         for (const mw::MutableOutput& output : outputs) {
             if (!output.IsFinal()) {
-                LOG_INFO("Not final - Non-final output");
                 return false;
             }
         }
 
         for (const mw::MutableKernel& kernel : kernels) {
             if (!kernel.IsFinal()) {
-                LOG_INFO("Not final - Non-final kernel");
                 return false;
             }
         }
@@ -434,7 +499,10 @@ struct MutableTx : public Traits::ISerializable
     //
     IMPL_SERIALIZABLE(MutableTx, obj)
     {
-        READWRITE(obj.kernel_offset, obj.stealth_offset);// MW: TODO - Finish serialization for : obj.inputs, obj.outputs, obj.kernels);
+        mw::Transaction::CPtr tx;
+        SER_WRITE(obj, tx = obj.Finalized().value_or(nullptr));
+        READWRITE(WrapOptionalPtr(tx));
+        SER_READ(obj, if (tx) obj = MutableTx::From(*tx) );
     }
 };
 

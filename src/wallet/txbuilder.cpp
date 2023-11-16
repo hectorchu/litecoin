@@ -2,7 +2,6 @@
 
 #include <consensus/validation.h>
 #include <mw/wallet/sign.h>
-//#include <mw/wallet/TxBuilder.h>
 #include <policy/fees.h>
 #include <policy/policy.h>
 #include <script/standard.h>
@@ -27,7 +26,7 @@ TxBuilder::Ptr TxBuilder::New(const CWallet& wallet, const CCoinControl& coin_co
 
 util::Result<CreatedTransactionResult> TxBuilder::Build(bool sign)
 {
-    m_wallet.WalletLogPrintf("TxBuilder::Build() - START\n");
+    m_wallet.WalletLogPrintf("TxBuilder::Build(%s) - START\n", sign ? "sign=true" : "sign=false");
     m_selection_params.m_avoid_partial_spends = m_coin_control.m_avoid_partial_spends;
     m_selection_params.m_long_term_feerate = m_wallet.m_consolidate_feerate;
     m_selection_params.m_subtract_fee_outputs = m_recipients.NumOutputsToSubtractFeeFrom() > 0;
@@ -36,8 +35,7 @@ util::Result<CreatedTransactionResult> TxBuilder::Build(bool sign)
     m_selection_params.m_effective_feerate = GetMinimumFeeRate(m_wallet, m_coin_control, &feeCalc);
     m_selection_params.m_discard_feerate = GetDiscardRate(m_wallet);
 
-    // Do not, ever, assume that it's fine to change the fee rate if the user has explicitly
-    // provided one
+    // Do not, ever, assume that it's fine to change the fee rate if the user has explicitly provided one
     if (m_coin_control.m_feerate && m_selection_params.m_effective_feerate > *m_coin_control.m_feerate) {
         return util::Error{strprintf(_("Fee rate (%s) is lower than the minimum fee rate setting (%s)"), m_coin_control.m_feerate->ToString(FeeEstimateMode::SAT_VB), m_selection_params.m_effective_feerate.ToString(FeeEstimateMode::SAT_VB))};
     }
@@ -52,7 +50,7 @@ util::Result<CreatedTransactionResult> TxBuilder::Build(bool sign)
     auto available_coins = AvailableCoins(
         m_wallet,
         &m_coin_control,
-        m_selection_params.m_effective_feerate,
+        GetFeeRate(),
         1,          /*nMinimumAmount*/
         MAX_MONEY,  /*nMaximumAmount*/
         MAX_MONEY,  /*nMinimumSumAmount*/
@@ -75,12 +73,14 @@ util::Result<CreatedTransactionResult> TxBuilder::Build(bool sign)
     if (add_inputs_error.has_value()) {
         return add_inputs_error.value();
     }
-    
-    DiscourageFeeSniping(m_tx, m_selection_params.rng_fast, m_wallet.chain(), m_wallet.GetLastBlockHash(), m_wallet.GetLastBlockHeight());
+
+    // Use a height-based locktime to discourage fee sniping. Skip this for MWEB_TO_MWEB and PEGOUT transactions, since they don't have a LTC transaction.
+    if (!m_tx.vin.empty()) {
+        DiscourageFeeSniping(m_tx, m_selection_params.rng_fast, m_wallet.chain(), m_wallet.GetLastBlockHash(), m_wallet.GetLastBlockHeight());
+    }
     
     // Add outputs (recipients, change, pegin)
-    m_wallet.WalletLogPrintf("TxBuilder::Build() - Adding outputs\n");
-    auto add_outputs_error = AddOutputs(m_selection_params, *result);
+    auto add_outputs_error = AddOutputs(*result);
     if (add_outputs_error.has_value()) {
         return add_outputs_error.value();
     }
@@ -92,19 +92,14 @@ util::Result<CreatedTransactionResult> TxBuilder::Build(bool sign)
     }
     
     // Subtract fee from outputs
-    m_wallet.WalletLogPrintf("TxBuilder::Build() - Subtracting fee from outputs\n");
-    auto subtract_fee_error = SubtractFeeFromOutputs(m_selection_params);
+    auto subtract_fee_error = SubtractFeeFromOutputs();
     if (subtract_fee_error.has_value()) {
         return subtract_fee_error.value();
     }
-    
-    if (m_selection_params.m_tx_type != TxType::LTC_TO_LTC) {
-        // Build and add the MWEB tx
-        m_wallet.WalletLogPrintf("TxBuilder::Build() - Adding MWEB tx\n");
-        auto add_mweb_tx_error = AddMWEBTx();
-        if (add_mweb_tx_error.has_value()) {
-            return add_mweb_tx_error.value();
-        }
+
+    // Update MWEB fee
+    if (GetTxType() != TxType::LTC_TO_LTC) {
+        m_tx.mweb_tx.SetFee(CalcMWEBFee());
     }
 
     // Give up if change keypool ran out and change is required
@@ -112,9 +107,17 @@ util::Result<CreatedTransactionResult> TxBuilder::Build(bool sign)
         return util::Error{m_change.error};
     }
 
-    m_wallet.WalletLogPrintf("TxBuilder::Build() - Signing tx\n");
-    if (sign && !m_wallet.SignTransaction(m_tx)) {
-        return util::Error{_("Signing transaction failed")};
+    // Sign the transaction
+    if (sign) {
+        auto add_mweb_tx_error = SignMWEBTx();
+        if (add_mweb_tx_error.has_value()) {
+            return add_mweb_tx_error.value();
+        }
+
+        m_wallet.WalletLogPrintf("TxBuilder::Build() - Signing tx\n");
+        if (!m_wallet.SignTransaction(m_tx)) {
+            return util::Error{_("Signing transaction failed")};
+        }
     }
 
     // Return the constructed transaction data.
@@ -152,7 +155,7 @@ util::Result<CreatedTransactionResult> TxBuilder::Build(bool sign)
               feeCalc.est.fail.start, feeCalc.est.fail.end,
               (feeCalc.est.fail.totalConfirmed + feeCalc.est.fail.inMempool + feeCalc.est.fail.leftMempool) > 0.0 ? 100 * feeCalc.est.fail.withinTarget / (feeCalc.est.fail.totalConfirmed + feeCalc.est.fail.inMempool + feeCalc.est.fail.leftMempool) : 0.0,
               feeCalc.est.fail.withinTarget, feeCalc.est.fail.totalConfirmed, feeCalc.est.fail.inMempool, feeCalc.est.fail.leftMempool);
-    return CreatedTransactionResult(tx, fee_paid, m_change.GetPosition(), feeCalc);
+    return CreatedTransactionResult(m_tx, fee_paid, m_change.GetPosition(), feeCalc);
 }
 
 util::Result<SelectionResult> TxBuilder::SelectInputCoins(const CoinsResult& available_coins)
@@ -160,10 +163,10 @@ util::Result<SelectionResult> TxBuilder::SelectInputCoins(const CoinsResult& ava
     auto select_by_type = [&](const TxType& tx_type) -> std::optional<SelectionResult> {
         m_selection_params.m_tx_type = tx_type;
         m_selection_params.m_change_params = m_change.BuildParams(m_wallet, m_coin_control, m_selection_params, m_recipients);
-        const CAmount nTarget = CalcSelectionTarget(m_selection_params, tx_type);
+        const CAmount nTarget = CalcSelectionTarget(tx_type);
         CoinsResult available_coins_mut = available_coins;
 
-        m_wallet.WalletLogPrintf("TxBuilder::SelectInputCoins() - Selection target: %s, Change on MWEB: %i\n", FormatMoney(nTarget), ChangeBuilder::ChangeBelongsOnMWEB(m_selection_params.m_tx_type, m_coin_control.destChange));
+        m_wallet.WalletLogPrintf("TxBuilder::SelectInputCoins() - Selection target: %s, Change on MWEB: %i\n", FormatMoney(nTarget), ChangeBuilder::ChangeBelongsOnMWEB(GetTxType(), m_coin_control.destChange));
         return SelectCoins(m_wallet, available_coins_mut, nTarget, m_coin_control, m_selection_params);
     };
     
@@ -228,13 +231,7 @@ std::optional<util::Error> TxBuilder::AddInputs(const std::vector<GenericWalletU
     const uint32_t nSequence{m_coin_control.m_signal_bip125_rbf.value_or(m_wallet.m_signal_rbf) ? MAX_BIP125_RBF_SEQUENCE : CTxIn::MAX_SEQUENCE_NONFINAL};
     for (const GenericWalletUTXO& utxo : shuffled_inputs) {
         if (utxo.IsMWEB()) {
-            const MWWalletUTXO& mweb_utxo = utxo.GetMWEB();
-
-            mw::MutableInput mweb_input = mw::MutableInput::FromOutput(mweb_utxo.output);
-            mweb_input.amount = mweb_utxo.coin.amount;
-            mweb_input.spend_key = mweb_utxo.coin.spend_key;
-            mweb_input.raw_blind = mweb_utxo.coin.blind;
-            m_tx.mweb_tx.inputs.push_back(std::move(mweb_input));
+            m_tx.mweb_tx.inputs.push_back(mw::MutableInput::FromCoin(utxo.GetMWEB().coin));
         } else {
             m_tx.vin.push_back(CTxIn(utxo.GetID().ToOutPoint(), CScript(), nSequence));
         }
@@ -243,12 +240,13 @@ std::optional<util::Error> TxBuilder::AddInputs(const std::vector<GenericWalletU
     return std::nullopt;
 }
 
-std::optional<util::Error> TxBuilder::AddOutputs(const CoinSelectionParams& coin_selection_params, const SelectionResult& selection_result)
+std::optional<util::Error> TxBuilder::AddOutputs(const SelectionResult& selection_result)
 {
-    const TxType tx_type = coin_selection_params.m_tx_type;
+    m_wallet.WalletLogPrintf("TxBuilder::AddOutputs() - BEGIN\n");
+
+    const TxType tx_type = GetTxType();
 
     // Outputs for the payees
-    m_wallet.WalletLogPrintf("TxBuilder::Adlding recipients\n");
     for (const CRecipient& recipient : m_recipients.All()) {
         if (recipient.IsMWEB()) {
             mw::MutableOutput mweb_output;
@@ -271,9 +269,9 @@ std::optional<util::Error> TxBuilder::AddOutputs(const CoinSelectionParams& coin
         FormatMoney(selection_result.GetSelectedValue()),
         FormatMoney(selection_result.GetSelectedEffectiveValue()),
         selection_result.GetSelectedValue() - selection_result.GetSelectedEffectiveValue(),
-        coin_selection_params.m_change_params.m_change_fee
+        m_selection_params.m_change_params.m_change_fee
     );
-    const CAmount change_amount = selection_result.GetChange(coin_selection_params.m_change_params.min_viable_change, coin_selection_params.m_change_params.m_change_fee);
+    const CAmount change_amount = selection_result.GetChange(m_selection_params.m_change_params.min_viable_change, m_selection_params.m_change_params.m_change_fee);
     m_wallet.WalletLogPrintf("TxBuilder::AddOutputs() - change_amount: %s\n", FormatMoney(change_amount));
     if (change_amount > 0) {
         m_change.amount = change_amount;
@@ -299,7 +297,7 @@ std::optional<util::Error> TxBuilder::AddOutputs(const CoinSelectionParams& coin
             CTxOut newTxOut(change_amount, m_change.script_or_address.GetScript()); // MW: TODO - What if script_or_address is MWEB address?
             if (m_change.change_position.IsNull()) {
                 // Insert change txn at random position:
-                m_change.change_position = coin_selection_params.rng_fast.randrange(m_tx.vout.size() + 1);
+                m_change.change_position = m_selection_params.rng_fast.randrange(m_tx.vout.size() + 1);
             } else if (m_change.change_position.IsLTC() && m_change.change_position.ToLTC() > m_tx.vout.size()) {
                 return util::Error{_("Transaction change output index out of range")};
             }
@@ -316,51 +314,68 @@ std::optional<util::Error> TxBuilder::AddOutputs(const CoinSelectionParams& coin
     // Add peg-in output for PEGIN and PEGIN_PEGOUT transactions
     if (tx_type == TxType::PEGIN || tx_type == TxType::PEGIN_PEGOUT) {
         m_wallet.WalletLogPrintf("TxBuilder::AddOutputs() - Adding pegin\n");
-        CAmount pegin_amount{0};
-        for (const GenericWalletUTXO& input : selection_result.GetInputSet()) {
-            if (!input.IsMWEB()) {
-                pegin_amount += input.GetValue();
+
+        if (!m_change.change_position.IsMWEB()) {
+            // Pegin amount needed when no MWEB change = (MWEB fee + MWEB output values) - (MWEB input values + Pegout values).
+            CAmount pegin_amount = CalcMWEBFee();
+            for (const mw::MutableOutput& mweb_output : m_tx.mweb_tx.outputs) {
+                pegin_amount += mweb_output.amount.value_or(0);
             }
-        }
 
-        if (m_change.change_position.IsLTC()) {
-            pegin_amount -= m_change.amount;
-        }
+            for (const GenericWalletUTXO& input : selection_result.GetInputSet()) {
+                if (input.IsMWEB()) {
+                    pegin_amount -= input.GetValue();
+                }
+            }
 
-        m_tx.mweb_tx.SetPeginAmount(pegin_amount);
-        m_tx.vout.push_back(CTxOut{pegin_amount, GetScriptForPegin(mw::Hash())});
-        CTxOut& pegin_output = m_tx.vout.back();
+            pegin_amount -= m_tx.mweb_tx.GetTotalPegoutAmount();
 
-        const util::Result<CAmount> ltc_fee_result = CalcLTCFee(coin_selection_params.m_effective_feerate);
-        if (!ltc_fee_result) {
-            return util::Error{ErrorString(ltc_fee_result)};
-        }
+            m_tx.mweb_tx.SetPeginAmount(pegin_amount);
+            m_tx.vout.push_back(CTxOut{pegin_amount, GetScriptForPegin(mw::Hash())});
+        } else {
+            CAmount pegin_amount{0};
+            for (const GenericWalletUTXO& input : selection_result.GetInputSet()) {
+                if (!input.IsMWEB()) {
+                    pegin_amount += input.GetValue();
+                }
+            }
 
-        // Reduce the pegin amount by ltc_fee
-        pegin_output.nValue -= ltc_fee_result.value();
-        m_tx.mweb_tx.SetPeginAmount(pegin_output.nValue);
-        m_wallet.WalletLogPrintf("TxBuilder::AddOutputs() - pegin_amount: %s, ltc_fee: %lld, change_amount: %s\n", FormatMoney(pegin_output.nValue), *ltc_fee_result, FormatMoney(m_change.amount));
+            m_tx.mweb_tx.SetPeginAmount(pegin_amount);
+            m_tx.vout.push_back(CTxOut{pegin_amount, GetScriptForPegin(mw::Hash())});
+            CTxOut& pegin_output = m_tx.vout.back();
 
-        // Error if the pegin output is reduced to be below dust
-        if (pegin_output.nValue < 0) {
-            return util::Error{_("The transaction amount is too small to pay the fee")};
-        } else if (IsDust(pegin_output, m_wallet.chain().relayDustFee())) {
-            return util::Error{_("The transaction amount is too small to send after the fee has been deducted")};
+            // Reduce the pegin amount by ltc_fee
+            const util::Result<CAmount> ltc_fee_result = CalcLTCFee();
+            if (!ltc_fee_result) {
+                return util::Error{ErrorString(ltc_fee_result)};
+            }
+
+            pegin_output.nValue -= ltc_fee_result.value();
+            m_tx.mweb_tx.SetPeginAmount(pegin_output.nValue);
+            m_wallet.WalletLogPrintf("TxBuilder::AddOutputs() - pegin_amount: %s, ltc_fee: %lld, change_amount: %s\n", FormatMoney(pegin_output.nValue), *ltc_fee_result, FormatMoney(m_change.amount));
+
+            // Error if the pegin output is reduced to be below dust
+            if (pegin_output.nValue < 0) {
+                return util::Error{_("The transaction amount is too small to pay the fee")};
+            } else if (IsDust(pegin_output, m_wallet.chain().relayDustFee())) {
+                return util::Error{_("The transaction amount is too small to send after the fee has been deducted")};
+            }
         }
     }
 
-    m_wallet.WalletLogPrintf("TxBuilder::AddOutputs() - Finished\n");
+    m_wallet.WalletLogPrintf("TxBuilder::AddOutputs() - END\n");
     return std::nullopt;
 }
 
-std::optional<util::Error> TxBuilder::SubtractFeeFromOutputs(const CoinSelectionParams& coin_selection_params)
+std::optional<util::Error> TxBuilder::SubtractFeeFromOutputs()
 {
-    util::Result<CAmount> ltc_fee_result = CalcLTCFee(coin_selection_params.m_effective_feerate);
+    m_wallet.WalletLogPrintf("TxBuilder::SubtractFeeFromOutputs() - BEGIN\n");
+    util::Result<CAmount> ltc_fee_result = CalcLTCFee();
     if (!ltc_fee_result) {
         return util::Error{ErrorString(ltc_fee_result)};
     }
 
-    CAmount mweb_fee = CalcMWEBFee(coin_selection_params.m_effective_feerate);
+    CAmount mweb_fee = CalcMWEBFee();
     CAmount fee_needed = *ltc_fee_result + mweb_fee;
     CAmount current_fee = GetFeePaid();
     m_wallet.WalletLogPrintf("TxBuilder::SubtractFeeFromOutputs() - fee_needed: %lld (%lld LTC, %lld MWEB), current_fee: %lld\n", fee_needed, *ltc_fee_result, mweb_fee, current_fee);
@@ -381,7 +396,7 @@ std::optional<util::Error> TxBuilder::SubtractFeeFromOutputs(const CoinSelection
 
     // The only time that fee_needed should be less than the amount available for fees is when
     // we are subtracting the fee from the outputs. If this occurs at any other time, it is a bug.
-    assert(coin_selection_params.m_subtract_fee_outputs || fee_needed <= current_fee);
+    assert(m_selection_params.m_subtract_fee_outputs || fee_needed <= current_fee);
 
     const CAmount to_reduce = fee_needed - current_fee;
     const size_t outputs_to_subtract_fee_from = m_recipients.NumOutputsToSubtractFeeFrom();
@@ -455,25 +470,24 @@ std::optional<util::Error> TxBuilder::SubtractFeeFromOutputs(const CoinSelection
         }
     }
 
-    m_wallet.WalletLogPrintf("TxBuilder::SubtractFeeFromOutputs() - Finished\n");
+    m_wallet.WalletLogPrintf("TxBuilder::SubtractFeeFromOutputs() - END\n");
     return std::nullopt;
 }
 
-std::optional<util::Error> TxBuilder::AddMWEBTx()
+std::optional<util::Error> TxBuilder::SignMWEBTx()
 {
-    //auto mweb_tx_result = m_mweb.Finalize(m_selection_params.m_effective_feerate);
-    //if (!mweb_tx_result) {
-    //    return util::Error{util::ErrorString(mweb_tx_result)};
-    //}
+    m_wallet.WalletLogPrintf("TxBuilder::SignMWEBTx() - BEGIN\n");
+    if (GetTxType() == TxType::LTC_TO_LTC) {
+        m_wallet.WalletLogPrintf("TxBuilder::SignMWEBTx() - Not an MWEB Tx. Nothing to sign.");
+        return std::nullopt;
+    }
 
-    m_tx.mweb_tx.SetFee(CalcMWEBFee(m_selection_params.m_effective_feerate));
-
-    util::Result<mw::SignTxResult> sign_tx_result = mw::SignTx(m_tx.mweb_tx, {});
+    util::Result<mw::SignTxResult> sign_tx_result = mw::SignTx(m_tx);
     if (!sign_tx_result) {
         return util::Error{util::ErrorString(sign_tx_result)};
     }
 
-    m_wallet.WalletLogPrintf("TxBuilder::AddMWEBTx() - MWEB transaction signed\n");
+    m_wallet.WalletLogPrintf("TxBuilder::SignMWEBTx() - MWEB transaction signed\n");
 
     // Update change position
     if (m_change.change_position.IsMWEB()) {
@@ -498,27 +512,16 @@ std::optional<util::Error> TxBuilder::AddMWEBTx()
     // We still need to rewind them to populate any remaining fields, like address index.
     m_wallet.GetMWWallet()->RewindOutputs(CTransaction(m_tx));
 
-    // Update pegin output
-    auto pegins = m_tx.mweb_tx.GetPegIns();
-    if (!pegins.empty()) {
-        for (size_t i = 0; i < m_tx.vout.size(); i++) {
-            if (IsPegInOutput(CTransaction(m_tx).GetOutput(i))) {
-                m_tx.vout[i].nValue = pegins.front().GetAmount();
-                m_tx.vout[i].scriptPubKey = GetScriptForPegin(pegins.front().GetKernelID());
-                break;
-            }
-        }
-    }
-
+    m_wallet.WalletLogPrintf("TxBuilder::SignMWEBTx() - END\n");
     return std::nullopt;
 }
 
-CAmount TxBuilder::CalcSelectionTarget(const CoinSelectionParams& coin_selection_params, const TxType& tx_type) const
+CAmount TxBuilder::CalcSelectionTarget(const TxType& tx_type) const
 {
     m_wallet.WalletLogPrintf("TxBuilder::CalcSelectionTarget() - Calculating target for type: %d\n", (int)tx_type);
 
     const CAmount recipients_sum = m_recipients.Sum();
-    if (coin_selection_params.m_subtract_fee_outputs) {
+    if (m_selection_params.m_subtract_fee_outputs) {
         return recipients_sum;
     }
 
@@ -546,13 +549,13 @@ CAmount TxBuilder::CalcSelectionTarget(const CoinSelectionParams& coin_selection
     switch (tx_type) {
     case TxType::MWEB_TO_MWEB: {
         const size_t mweb_weight = mw::KERNEL_WITH_STEALTH_WEIGHT + (mw::STANDARD_OUTPUT_WEIGHT * mweb_recipients.size());
-        const CAmount non_change_mweb_fee = coin_selection_params.m_effective_feerate.GetFee(0, mweb_weight);
+        const CAmount non_change_mweb_fee = GetFeeRate().GetFee(0, mweb_weight);
         return recipients_sum + non_change_mweb_fee;
     }
     case TxType::PEGIN: {
         const size_t pegin_bytes = base_ltc_bytes + pegin_output_bytes + hogex_input_bytes;
         const size_t pegin_mweb_weight = mw::KERNEL_WITH_STEALTH_WEIGHT + (mw::STANDARD_OUTPUT_WEIGHT * mweb_recipients.size());
-        const CAmount pegin_fee = coin_selection_params.m_effective_feerate.GetFee(pegin_bytes, pegin_mweb_weight);
+        const CAmount pegin_fee = GetFeeRate().GetFee(pegin_bytes, pegin_mweb_weight);
         m_wallet.WalletLogPrintf("TxBuilder::CalcSelectionTarget() - Max LTC bytes: %u, MWEB weight: %u, pegin_fee: %lld\n", pegin_bytes, pegin_mweb_weight, pegin_fee);
         return recipients_sum + pegin_fee;
     }
@@ -565,7 +568,7 @@ CAmount TxBuilder::CalcSelectionTarget(const CoinSelectionParams& coin_selection
         );
         const size_t pegout_kernel_weight = Weight::CalcKernelWeight(true, pegouts);
 
-        const CAmount basic_pegout_fee = coin_selection_params.m_effective_feerate.GetFee(ltc_recipient_bytes, pegout_kernel_weight);
+        const CAmount basic_pegout_fee = GetFeeRate().GetFee(ltc_recipient_bytes, pegout_kernel_weight);
         return recipients_sum + basic_pegout_fee;
     }
     case TxType::PEGIN_PEGOUT: {
@@ -582,11 +585,11 @@ CAmount TxBuilder::CalcSelectionTarget(const CoinSelectionParams& coin_selection
         const size_t pegout_kernel_weight = Weight::CalcKernelWeight(true, pegouts);
 
         const size_t pegin_bytes = base_ltc_bytes + pegin_output_bytes + hogex_input_bytes + ltc_recipient_bytes;
-        const CAmount complex_pegout_fee = coin_selection_params.m_effective_feerate.GetFee(pegin_bytes, pegout_kernel_weight);
+        const CAmount complex_pegout_fee = GetFeeRate().GetFee(pegin_bytes, pegout_kernel_weight);
         return recipients_sum + complex_pegout_fee;
     }
     case TxType::LTC_TO_LTC: {
-        const CAmount ltc_to_ltc_fee = coin_selection_params.m_effective_feerate.GetFee(base_ltc_bytes + ltc_recipient_bytes, 0);
+        const CAmount ltc_to_ltc_fee = GetFeeRate().GetFee(base_ltc_bytes + ltc_recipient_bytes, 0);
         return recipients_sum + ltc_to_ltc_fee;
     }
     }
@@ -630,8 +633,12 @@ CAmount TxBuilder::GetFeePaid() const
 }
 
 // Calculate the portion of the fee that should be paid on the LTC side.
-util::Result<CAmount> TxBuilder::CalcLTCFee(const CFeeRate& fee_rate) const
+util::Result<CAmount> TxBuilder::CalcLTCFee() const
 {
+    const TxType tx_type = GetTxType();
+    if (tx_type == TxType::MWEB_TO_MWEB || tx_type == TxType::PEGOUT) {
+        return CAmount{0};
+    }
     CMutableTransaction tx_without_mweb = m_tx;
     tx_without_mweb.mweb_tx.SetNull();
     
@@ -653,17 +660,17 @@ util::Result<CAmount> TxBuilder::CalcLTCFee(const CFeeRate& fee_rate) const
         tx_without_mweb.vin.size(),
         tx_without_mweb.vout.size()
     );
-    return fee_rate.GetFee(tx_bytes, 0);
+    return GetFeeRate().GetFee(tx_bytes, 0);
 }
 
-CAmount TxBuilder::CalcMWEBFee(const CFeeRate& feeRate) const noexcept
+CAmount TxBuilder::CalcMWEBFee() const noexcept
 {
     size_t nBytes = 0;
     for (const PegOutCoin& pegout : m_tx.mweb_tx.GetPegOutCoins()) {
         nBytes += ::GetSerializeSize(CTxOut(pegout.GetAmount(), pegout.GetScriptPubKey()), PROTOCOL_VERSION);
     }
 
-    return feeRate.GetFee(nBytes, m_tx.mweb_tx.GetMWEBWeight());
+    return GetFeeRate().GetFee(nBytes, m_tx.mweb_tx.GetMWEBWeight());
 }
 
 util::Result<size_t> TxBuilder::CalcMaxSignedTxBytes(const CMutableTransaction& tx) const

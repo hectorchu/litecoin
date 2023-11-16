@@ -95,7 +95,6 @@ static UniValue FinishTransaction(const std::shared_ptr<CWallet> pwallet, const 
         // Serialize the PSBT
         CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
         ssTx << psbtx;
-        //LogPrintf("PSBT: %s\n", ssTx.str());
         result.pushKV("psbt", EncodeBase64(ssTx.str()));
     }
 
@@ -103,8 +102,8 @@ static UniValue FinishTransaction(const std::shared_ptr<CWallet> pwallet, const 
         CMutableTransaction mtx = finalize_result.value();
         LogPrintf("FinishTransaction - MWEB IsFinal: %d, MWEB finalized: %d\n", mtx.mweb_tx.IsFinal() ? 1 : 0, mtx.mweb_tx.Finalized().has_value() ? 1 : 0);
 
-        std::string hex{EncodeHexTx(CTransaction(mtx))};
         CTransactionRef tx(MakeTransactionRef(std::move(mtx)));
+        std::string hex{EncodeHexTx(*tx)};
         result.pushKV("txid", tx->GetHash().GetHex());
         if (add_to_wallet && !psbt_opt_in) {
             pwallet->CommitTransaction(tx, {}, /*orderForm=*/{});
@@ -158,7 +157,7 @@ UniValue SendMoney(CWallet& wallet, const CCoinControl &coin_control, std::vecto
     if (!res) {
         throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, util::ErrorString(res).original);
     }
-    const CTransactionRef& tx = res->tx;
+    const CTransactionRef& tx = MakeTransactionRef(res->tx);
     wallet.CommitTransaction(tx, std::move(map_value), {} /* orderForm */);
     if (verbose) {
         UniValue entry(UniValue::VOBJ);

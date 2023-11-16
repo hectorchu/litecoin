@@ -75,17 +75,6 @@ bool Schnorr::Verify(
 
 bool Schnorr::BatchVerify(const std::vector<SignedMessage>& signatures)
 {
-    //for (const SignedMessage& signed_message : signatures) {
-    //    if (CACHE.Read()->Cached(signed_message)) {
-    //        continue;
-    //    }
-
-    //    if (!Verify(signed_message.GetSignature(), signed_message.GetPublicKey(), signed_message.GetMsgHash())) {
-    //        return false;
-    //    }
-    //}
-
-    //return true;
     std::vector<SignedMessage> unverified_messages;
     std::vector<secp256k1_pubkey> parsedPubKeys;
     std::vector<const uint8_t*> signaturePtrs;

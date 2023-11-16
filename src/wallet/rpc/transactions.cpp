@@ -108,9 +108,10 @@ static UniValue ListReceived(const CWallet& wallet, const UniValue& params, cons
             continue;
         }
 
-        for (const CTxOut& txout : wtx.tx->vout) {
+        // MW: TODO - Instead of duplicating logic for outputs, pegouts, and mweb_wtx_info->received_coin, just add a "GetDestinations()" which returns GenericAddress and amount for all 3 output types
+        for (const GenericOutputID& output_id : wtx.GetOutputIDs(true)) {
             CTxDestination address;
-            if (!ExtractDestination(txout.scriptPubKey, address))
+            if (!wallet.ExtractOutputDestination(wtx, output_id, address))
                 continue;
 
             if (filtered_address && !(filtered_address == address)) {
@@ -122,7 +123,28 @@ static UniValue ListReceived(const CWallet& wallet, const UniValue& params, cons
                 continue;
 
             tallyitem& item = mapTally[address];
-            item.nAmount += txout.nValue;
+            item.nAmount += wallet.GetValue(wtx, output_id);
+            item.nConf = std::min(item.nConf, nDepth);
+            item.txids.push_back(wtx.GetHash());
+            if (mine & ISMINE_WATCH_ONLY)
+                item.fIsWatchonly = true;
+        }
+
+        for (const PegOutCoin& pegout : wtx.tx->mweb_tx.GetPegOuts()) {
+            CTxDestination address;
+            if (!ExtractDestination(pegout.GetScriptPubKey(), address))
+                continue;
+
+            if (filtered_address && !(filtered_address == address)) {
+                continue;
+            }
+
+            isminefilter mine = wallet.IsMine(address);
+            if (!(mine & filter))
+                continue;
+
+            tallyitem& item = mapTally[address];
+            item.nAmount += pegout.GetAmount();
             item.nConf = std::min(item.nConf, nDepth);
             item.txids.push_back(wtx.GetHash());
             if (mine & ISMINE_WATCH_ONLY)
@@ -377,9 +399,9 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
             }
             MaybePushAddress(entry, r.destination);
 
-            GenericAddress dest_addr;
-            if (wallet.ExtractDestinationScript(wtx.tx->GetOutput(r.output_id), dest_addr)) {
-                PushParentDescriptors(wallet, dest_addr, entry);
+            GenericAddress output_address;
+            if (wallet.ExtractOutputAddress(wtx, r.output_id, output_address)) {
+                PushParentDescriptors(wallet, output_address, entry);
             }
             if (wtx.IsCoinBase() || wtx.IsHogEx())
             {
@@ -787,7 +809,7 @@ RPCHelpMan gettransaction()
     CAmount nCredit = CachedTxGetCredit(*pwallet, wtx, filter);
     CAmount nDebit = CachedTxGetDebit(*pwallet, wtx, filter);
     CAmount nNet = nCredit - nDebit;
-    CAmount nFee = (CachedTxIsFromMe(*pwallet, wtx, filter) ? wtx.tx->GetValueOut() - nDebit : 0);
+    CAmount nFee = (CachedTxIsFromMe(*pwallet, wtx, filter) ? -CachedTxGetFee(*pwallet, wtx, filter) : 0);
 
     entry.pushKV("amount", ValueFromAmount(nNet - nFee));
     if (CachedTxIsFromMe(*pwallet, wtx, filter))

@@ -36,8 +36,8 @@ BOOST_FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)
         auto res = CreateTransaction(*wallet, {recipient}, RANDOM_CHANGE_POSITION, coin_control);
         BOOST_CHECK(res);
         const auto& txr = *res;
-        BOOST_CHECK_EQUAL(txr.tx->vout.size(), 1);
-        BOOST_CHECK_EQUAL(txr.tx->vout[0].nValue, recipient.nAmount + leftover_input_amount - txr.fee);
+        BOOST_CHECK_EQUAL(txr.tx.vout.size(), 1);
+        BOOST_CHECK_EQUAL(txr.tx.vout[0].nValue, recipient.nAmount + leftover_input_amount - txr.fee);
         BOOST_CHECK_GT(txr.fee, 0);
         return txr.fee;
     };
@@ -124,7 +124,7 @@ BOOST_FIXTURE_TEST_CASE(wallet_duplicated_preset_inputs_test, TestChain100Setup)
     auto available_coins = AvailableCoins(*wallet);
     std::vector<GenericWalletUTXO> coins = available_coins.All();
     // Preselect the first 3 UTXO (150 BTC total)
-    std::set<COutPoint> preset_inputs = {coins[0].GetOutput().outpoint, coins[1].GetOutput().outpoint, coins[2].GetOutput().outpoint};
+    std::set<COutPoint> preset_inputs = {coins[0].GetLTC().outpoint, coins[1].GetLTC().outpoint, coins[2].GetLTC().outpoint};
 
     // Try to create a tx that spends more than what preset inputs + wallet selected inputs are covering for.
     // The wallet can cover up to 200 BTC, and the tx target is 299 BTC.

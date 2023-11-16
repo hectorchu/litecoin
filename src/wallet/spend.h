@@ -81,8 +81,8 @@ CAmount GetAvailableBalance(const CWallet& wallet, const CCoinControl* coinContr
 /**
  * Find non-change parent output.
  */
-GenericOutput FindNonChangeParentOutput(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& idx) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
-GenericOutput FindNonChangeParentOutput(const CWallet& wallet, const uint256& tx_hash, const GenericOutputID& idx) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
+bool FindNonChangeParentOutputDestination(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_id, CTxDestination& dest) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
+bool FindNonChangeParentOutputDestination(const CWallet& wallet, const uint256& tx_hash, const GenericOutputID& output_id, CTxDestination& dest) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
 
 /**
  * Return list of available coins and locked coins grouped by non-change output address.
@@ -143,13 +143,13 @@ void DiscourageFeeSniping(CMutableTransaction& tx, FastRandomContext& rng_fast,
 
 struct CreatedTransactionResult
 {
-    CTransactionRef tx;
+    CMutableTransaction tx;
     CAmount fee;
     FeeCalculation fee_calc;
     ChangePosition change_pos;
 
-    CreatedTransactionResult(CTransactionRef _tx, CAmount _fee, ChangePosition _change_pos, const FeeCalculation& _fee_calc)
-        : tx(_tx), fee(_fee), fee_calc(_fee_calc), change_pos(std::move(_change_pos)) {}
+    CreatedTransactionResult(CMutableTransaction _tx, CAmount _fee, ChangePosition _change_pos, const FeeCalculation& _fee_calc)
+        : tx(std::move(_tx)), fee(_fee), fee_calc(_fee_calc), change_pos(std::move(_change_pos)) {}
 };
 
 /**

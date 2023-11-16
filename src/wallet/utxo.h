@@ -109,7 +109,6 @@ public:
 struct MWWalletUTXO
 {
     mw::Coin coin;
-    mw::Output output;
     int depth;
     StealthAddress address;
     bool from_me;
@@ -133,7 +132,7 @@ struct GenericWalletUTXO
 
     bool IsMWEB() const noexcept { return std::holds_alternative<MWWalletUTXO>(m_output); }
 
-    CWalletUTXO& GetOutput() noexcept
+    CWalletUTXO& GetLTC() noexcept
     {
         assert(!IsMWEB());
         return std::get<CWalletUTXO>(m_output);

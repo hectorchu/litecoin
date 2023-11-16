@@ -535,6 +535,7 @@ RPCHelpMan listunspent()
                         {
                             {RPCResult::Type::STR_HEX, "txid", "the transaction id"},
                             {RPCResult::Type::NUM, "vout", /*optional=*/true, "the vout value"},
+                            {RPCResult::Type::STR_HEX, "mweb_out", /*optional=*/true, "the MWEB output commitment"},
                             {RPCResult::Type::STR, "address", /*optional=*/true, "the litecoin address"},
                             {RPCResult::Type::STR, "label", /*optional=*/true, "The associated label, or \"\" for the default label"},
                             {RPCResult::Type::STR, "scriptPubKey", /*optional=*/true, "the script key"},
@@ -547,7 +548,7 @@ RPCHelpMan listunspent()
                             {RPCResult::Type::STR_HEX, "redeemScript", /*optional=*/true, "The redeemScript if scriptPubKey is P2SH"},
                             {RPCResult::Type::STR, "witnessScript", /*optional=*/true, "witnessScript if the scriptPubKey is P2WSH or P2SH-P2WSH"},
                             {RPCResult::Type::BOOL, "spendable", "Whether we have the private keys to spend this output"},
-                            {RPCResult::Type::BOOL, "solvable", "Whether we know how to spend this output, ignoring the lack of keys"},
+                            {RPCResult::Type::BOOL, "solvable", /*optional=*/true, "Whether we know how to spend this output, ignoring the lack of keys"},
                             {RPCResult::Type::BOOL, "reused", /*optional=*/true, "(only present if avoid_reuse is set) Whether this output is reused/dirty (sent to an address that was previously spent from)"},
                             {RPCResult::Type::STR, "desc", /*optional=*/true, "(only when solvable) A descriptor for spending this output"},
                             {RPCResult::Type::ARR, "parent_descs", /*optional=*/false, "List of parent descriptors for the scriptPubKey of this coin.", {
@@ -664,7 +665,11 @@ RPCHelpMan listunspent()
 
         UniValue entry(UniValue::VOBJ);
         entry.pushKV("txid", output_coin.GetTxHash().GetHex());
-        entry.pushKV("vout", (int)output_coin.GetID().ToOutPoint().n); // MW: TODO - Need to handle MWEB outputs
+        if (output_coin.IsMWEB()) {
+            entry.pushKV("mweb_out", output_coin.GetID().ToMWEB().ToHex());
+        } else {
+            entry.pushKV("vout", (int)output_coin.GetID().ToOutPoint().n);
+        }
         entry.pushKV("amount", ValueFromAmount(output_coin.GetValue()));
         entry.pushKV("confirmations", output_coin.GetDepth());
         entry.pushKV("spendable", output_coin.IsSpendable());
@@ -679,6 +684,7 @@ RPCHelpMan listunspent()
         }
 
         if (output_coin.IsMWEB()) {
+            PushParentDescriptors(*pwallet, address, entry);
             results.push_back(entry);
             continue;
         }
@@ -686,16 +692,9 @@ RPCHelpMan listunspent()
         const CWalletUTXO& out = std::get<CWalletUTXO>(output_coin.m_output);
         const CScript& scriptPubKey = out.txout.scriptPubKey;
 
-        bool reused = avoid_reuse && pwallet->IsSpentKey(GenericOutput(out.outpoint, out.txout));
+        bool reused = avoid_reuse && fValidAddress && pwallet->IsSpentKey(address);
 
         if (fValidAddress) {
-            entry.pushKV("address", EncodeDestination(address));
-
-            const auto* address_book_entry = pwallet->FindAddressBookEntry(address);
-            if (address_book_entry) {
-                entry.pushKV("label", address_book_entry->GetLabel());
-            }
-
             std::unique_ptr<SigningProvider> provider = pwallet->GetSolvingProvider(scriptPubKey);
             if (provider) {
                 if (scriptPubKey.IsPayToScriptHash()) {

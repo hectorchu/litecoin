@@ -21,6 +21,8 @@ by tests, compromising their intended effect.
 from base64 import b32decode, b32encode
 import binascii
 import copy
+from ctypes.wintypes import BYTE
+from decimal import Decimal
 import hashlib
 from io import BytesIO
 import math
@@ -460,6 +462,9 @@ class CTxOut:
         r += ser_string(self.scriptPubKey)
         return r
 
+    def get_amount(self):
+        return Decimal(self.nValue) / Decimal(1e8)
+
     def __repr__(self):
         return "CTxOut(nValue=%i.%08i scriptPubKey=%s)" \
             % (self.nValue // COIN, self.nValue % COIN,
@@ -558,14 +563,12 @@ class CTransaction:
             self.mweb_tx = tx.mweb_tx
             self.hogex = tx.hogex
 
-    def deserialize(self, f):
+    def deserialize(self, f: BytesIO):
         self.nVersion = struct.unpack("<i", f.read(4))[0]
         self.vin = deser_vector(f, CTxIn)
         flags = 0
         if len(self.vin) == 0:
             flags = struct.unpack("<B", f.read(1))[0]
-            # Not sure why flags can't be zero, but this
-            # matches the implementation in litecoind
             if (flags != 0):
                 self.vin = deser_vector(f, CTxIn)
                 self.vout = deser_vector(f, CTxOut)
@@ -577,11 +580,13 @@ class CTransaction:
         else:
             self.wit = CTxWitness()
 
-        if flags & 8:
-            self.mweb_tx = deser_mweb_tx(f)
-            if self.mweb_tx == None:
+        if flags & 8:            
+            mweb_type = struct.unpack("B", f.read(1))[0]
+            if mweb_type == 1:
+                self.mweb_tx = deser_mweb_tx(f)
+            else:
                 self.hogex = True
-
+                
         self.nLockTime = struct.unpack("<I", f.read(4))[0]
         self.sha256 = None
         self.hash = None
@@ -1970,6 +1975,15 @@ def deser_varint(f):
 
     return n
 
+def deser_commit(f: BytesIO):
+    return f.read(33).hex()
+
+def deser_hash(f: BytesIO):
+    return f.read(32).hex()
+
+def deser_signature(f: BytesIO):
+    return f.read(64).hex()
+
 def ser_mweb_block(b):
     if b == None:
         return struct.pack("B", 0)
@@ -1991,12 +2005,85 @@ def ser_mweb_tx(t):
     else:
         return struct.pack("B", 1) + bytes.fromhex(t)
 
+def deser_mweb_tx_body(f):
+    # Deserialize mweb_tx_body
+    mweb_tx_body = {}
+    
+    mweb_input_count = deser_compact_size(f)
+    mweb_inputs = []
+    for _ in range(mweb_input_count):
+        mweb_input = {}
+        mweb_input['features'] = struct.unpack("<B", f.read(1))[0]
+        mweb_input['output_id'] = deser_hash(f)
+        mweb_input['output_commit'] = deser_commit(f)
+        mweb_input['output_pk'] = deser_commit(f)
+        if mweb_input['features'] & 0x01:
+            mweb_input['input_pk'] = deser_commit(f)
+        if mweb_input['features'] & 0x02:
+            mweb_input['extra_data_len'] = deser_compact_size(f)
+            mweb_input['extra_data'] = f.read(mweb_input['extra_data_len'])
+        mweb_input['sig'] = deser_signature(f)
+        mweb_inputs.append(mweb_input)
+    mweb_tx_body['mweb_inputs'] = mweb_inputs
+    
+    mweb_output_count = deser_compact_size(f)
+    mweb_outputs = []
+    for _ in range(mweb_output_count):
+        mweb_output = {}
+        mweb_output['output_commit'] = deser_commit(f)
+        mweb_output['sender_pk'] = deser_commit(f)
+        mweb_output['receiver_pk'] = deser_commit(f)
+        mweb_output['features'] = struct.unpack("<B", f.read(1))[0]
+        if mweb_output['features'] & 0x01:
+            mweb_output['key_exchange_pk'] = deser_commit(f)
+            mweb_output['view_tag'] = struct.unpack("<B", f.read(1))[0]
+            mweb_output['masked_value'] = struct.unpack("<Q", f.read(8))[0]
+            mweb_output['masked_value_nonce'] = f.read(16).hex()
+        if mweb_output['features'] & 0x02:
+            mweb_output['extra_data_len'] = deser_compact_size(f)
+            mweb_output['extra_data'] = f.read(mweb_output['extra_data_len'])
+        mweb_output['rangeproof'] = f.read(675).hex()
+        mweb_output['sig'] = deser_signature(f)
+        mweb_outputs.append(mweb_output)
+    mweb_tx_body['mweb_outputs'] = mweb_outputs
+    
+    mweb_kernel_count = deser_compact_size(f)
+    mweb_kernels = []
+    for _ in range(mweb_kernel_count):
+        mweb_kernel = {}
+        mweb_kernel['features'] = struct.unpack("<B", f.read(1))[0]
+        if mweb_kernel['features'] & 0x01:
+            mweb_kernel['fee'] = deser_varint(f)
+        if mweb_kernel['features'] & 0x02:
+            mweb_kernel['pegin_amount'] = deser_varint(f)
+        if mweb_kernel['features'] & 0x04:
+            mweb_kernel['pegout_count'] = deser_compact_size(f)
+            mweb_kernel['pegouts'] = []
+            for _ in range(mweb_kernel['pegout_count']):
+                pegout = {}
+                pegout['amount'] = deser_varint(f)
+                pegout['script'] = deser_string(f).hex()
+                mweb_kernel['pegouts'].append(pegout)
+        if mweb_kernel['features'] & 0x08:
+            mweb_kernel['lock_height'] = deser_varint(f)
+        if mweb_kernel['features'] & 0x10:
+            mweb_kernel['stealth_excess'] = deser_commit(f)
+        if mweb_kernel['features'] & 0x20:
+            mweb_kernel['extra_data_len'] = deser_compact_size(f)
+            mweb_kernel['extra_data'] = f.read(mweb_kernel['extra_data_len']).hex()
+        mweb_kernel['kernel_excess'] = deser_commit(f)
+        mweb_kernel['sig'] = deser_signature(f)
+        mweb_kernels.append(mweb_kernel)
+    mweb_tx_body['mweb_kernels'] = mweb_kernels
+    return mweb_tx_body
+
 def deser_mweb_tx(f):
-    has_mweb = struct.unpack("B", f.read(1))[0]
-    if has_mweb == 1:
-        return binascii.hexlify(f.read())
-    else:
-        return None
+    mweb_tx = {}
+    mweb_tx['kernel_offset'] = deser_hash(f)
+    mweb_tx['stealth_offset'] = deser_hash(f)
+    
+    mweb_tx['body'] = deser_mweb_tx_body(f)
+    return mweb_tx
 
 class MWEBHeader:
     __slots__ = ("height", "output_root", "kernel_root", "leafset_root",
@@ -2015,11 +2102,11 @@ class MWEBHeader:
 
     def from_json(self, mweb_json):
         self.height = mweb_json['height']
-        self.output_root = bytes.fromhex(mweb_json['output_root'])
-        self.kernel_root = bytes.fromhex(mweb_json['kernel_root'])
-        self.leafset_root = bytes.fromhex(mweb_json['leaf_root'])
-        self.kernel_offset = bytes.fromhex(mweb_json['kernel_offset'])
-        self.stealth_offset = bytes.fromhex(mweb_json['stealth_offset'])
+        self.output_root = uint256_from_str(bytes.fromhex(mweb_json['output_root']))
+        self.kernel_root = uint256_from_str(bytes.fromhex(mweb_json['kernel_root']))
+        self.leafset_root = uint256_from_str(bytes.fromhex(mweb_json['leaf_root']))
+        self.kernel_offset = uint256_from_str(bytes.fromhex(mweb_json['kernel_offset']))
+        self.stealth_offset = uint256_from_str(bytes.fromhex(mweb_json['stealth_offset']))
         self.num_txos = mweb_json['num_txos']
         self.num_kernels = mweb_json['num_kernels']
         self.rehash()
@@ -2038,11 +2125,11 @@ class MWEBHeader:
     def serialize(self):
         r = b""
         r += ser_varint(self.height)
-        r += self.output_root
-        r += self.kernel_root
-        r += self.leafset_root
-        r += self.kernel_offset
-        r += self.stealth_offset
+        r += ser_uint256(self.output_root)
+        r += ser_uint256(self.kernel_root)
+        r += ser_uint256(self.leafset_root)
+        r += ser_uint256(self.kernel_offset)
+        r += ser_uint256(self.stealth_offset)
         r += ser_varint(self.num_txos)
         r += ser_varint(self.num_kernels)
         return r
@@ -2066,9 +2153,10 @@ class MWEBBlock:
 
     def deserialize(self, f):
         self.header.deserialize(f)
-        #self.inputs = deser_vector(f, MWEBInput)
-        #self.outputs = deser_vector(f, MWEBOutput)
-        #self.kernels = deser_vector(f, MWEBKernel)
+        body = deser_mweb_tx_body(f)
+        self.inputs = body.inputs
+        self.outputs = body.outputs
+        self.kernels = body.kernels
         self.rehash()
 
     def serialize(self):

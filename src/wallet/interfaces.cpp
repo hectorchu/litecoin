@@ -65,20 +65,19 @@ WalletTxIn MakeWalletTxIn(const CWallet& wallet, const GenericInput& input) EXCL
 //! Construct wallet TxOut struct.
 WalletTxOut MakeWalletTxOut(const CWallet& wallet,
     const CWalletTx& wtx,
-    const GenericOutput& output,
+    const GenericOutputID& output_id,
     int depth) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
 {
     WalletTxOut result;
-    result.output = output;
-    result.output_index = output.GetID();
+    result.output_index = output_id;
     result.time = wtx.GetTxTime();
     result.depth_in_main_chain = depth;
-    result.is_spent = wallet.IsSpent(output.GetID());
-    result.is_mine = wallet.IsMine(output.GetID());
+    result.is_spent = wallet.IsSpent(output_id);
+    result.is_mine = wallet.IsMine(output_id);
 
-    if (output.IsMWEB()) {
+    if (output_id.IsMWEB()) {
         mw::Coin coin;
-        if (wallet.GetCoin(output.ToMWEBOutputID(), coin)) {
+        if (wallet.GetCoin(output_id.ToMWEB(), coin)) {
             StealthAddress addr;
             if (wallet.GetMWWallet()->GetStealthAddress(coin, addr)) {
                 result.address = addr;
@@ -87,8 +86,9 @@ WalletTxOut MakeWalletTxOut(const CWallet& wallet,
             result.nValue = coin.amount;
         }
     } else {
-        result.address = output.GetTxOut().scriptPubKey;
-        result.nValue = output.GetTxOut().nValue;
+        const CTxOut& txout = wtx.tx->vout[output_id.ToOutPoint().n];
+        result.address = txout.scriptPubKey;
+        result.nValue = txout.nValue;
     }
 
     result.address_is_mine = wallet.IsMine(result.address);
@@ -100,13 +100,6 @@ WalletTxOut MakeWalletTxOut(const CWallet& wallet,
     const GenericWalletUTXO& output) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
 {
     WalletTxOut result;
-    if (output.IsMWEB()) {
-        result.output = GenericOutput(output.GetMWEB().output);
-    } else {
-        assert(output.GetID().IsOutPoint() && !output.GetAddress().IsMWEB());
-        result.output = GenericOutput(output.GetID().ToOutPoint(), CTxOut(output.GetValue(), output.GetAddress().GetScript()));
-    }
-
     result.address = output.GetAddress();
     result.address_is_mine = wallet.IsMine(result.address);
     result.output_index = output.GetID();
@@ -146,14 +139,14 @@ WalletTx MakeWalletTx(CWallet& wallet, const CWalletTx& wtx)
     //
     // Outputs
     //
-    for (const GenericOutput& output : wtx.GetOutputs()) {
+    for (const GenericOutputID& output_id : wtx.GetOutputIDs()) {
         // MWEB Peg-in output pubkey scripts are anyone-can-spend, so don't really have an owner.
         // In order for peg-ins to your own address to show up as SendToSelf txs, we need to filter these out.
-        if (!output.IsMWEB() && output.GetScriptPubKey().IsMWEBPegin()) {
+        if (!output_id.IsMWEB() && wtx.tx->vout[output_id.ToOutPoint().n].scriptPubKey.IsMWEBPegin()) {
             continue;
         }
 
-        result.outputs.push_back(MakeWalletTxOut(wallet, wtx, output, wallet.GetTxDepthInMainChain(wtx)));
+        result.outputs.push_back(MakeWalletTxOut(wallet, wtx, output_id, wallet.GetTxDepthInMainChain(wtx)));
     }
 
     for (const PegOutCoin& pegout : wtx.tx->mweb_tx.GetPegOuts()) {
@@ -276,6 +269,21 @@ public:
         });
         return result;
     }
+    bool extractOutputDestination(const GenericOutput& output, CTxDestination& dest) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        if (output.IsMWEB()) {
+            std::optional<StealthAddress> stealth_address = m_wallet->ExtractStealthAddress(output.ToMWEBOutputID());
+            if (stealth_address) {
+                dest = *stealth_address;
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return ExtractDestination(output.GetScriptPubKey(), dest);
+        }
+    }
     std::vector<std::string> getAddressReceiveRequests() override {
         LOCK(m_wallet->cs_wallet);
         return m_wallet->GetAddressReceiveRequests();
@@ -331,7 +339,7 @@ public:
             change_pos = -1;
         }
 
-        return txr.tx;
+        return MakeTransactionRef(txr.tx);
     }
     void commitTransaction(CTransactionRef tx,
         WalletValueMap value_map,
@@ -480,15 +488,15 @@ public:
         LOCK(m_wallet->cs_wallet);
         return m_wallet->IsMine(output);
     }
+    CAmount getValue(const GenericOutput& txout) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->GetValue(txout);
+    }
     CAmount getDebit(const GenericInput& input, isminefilter filter) override
     {
         LOCK(m_wallet->cs_wallet);
         return m_wallet->GetDebit(input, filter);
-    }
-    CAmount getCredit(const GenericOutput& output, isminefilter filter) override
-    {
-        LOCK(m_wallet->cs_wallet);
-        return OutputGetCredit(*m_wallet, output, filter);
     }
     CoinsList listCoins() override
     {
@@ -507,13 +515,13 @@ public:
         LOCK(m_wallet->cs_wallet);
         std::vector<WalletTxOut> result;
         result.reserve(outputs.size());
-        for (const GenericOutputID& output_idx : outputs) {
+        for (const GenericOutputID& output_id : outputs) {
             result.emplace_back();
-            auto wtx = m_wallet->FindWalletTx(output_idx);
+            auto wtx = m_wallet->FindWalletTx(output_id);
             if (wtx != nullptr) {
                 int depth = m_wallet->GetTxDepthInMainChain(*wtx);
                 if (depth >= 0) {
-                    result.back() = MakeWalletTxOut(*m_wallet, *wtx, wtx->tx->GetOutput(output_idx), depth);
+                    result.back() = MakeWalletTxOut(*m_wallet, *wtx, output_id, depth);
                 }
             }
         }

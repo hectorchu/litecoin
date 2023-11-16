@@ -194,7 +194,7 @@ public:
     std::vector<std::pair<mw::Hash, size_t>> pegout_indices; // MWEB: For HogEx transactions, output indices of pegouts belonging to this wallet
 
     // memory only
-    enum AmountType { DEBIT, CREDIT, IMMATURE_CREDIT, AVAILABLE_CREDIT, AMOUNTTYPE_ENUM_ELEMENTS };
+    enum AmountType { DEBIT, CREDIT, IMMATURE_CREDIT, AVAILABLE_CREDIT, FEE, AMOUNTTYPE_ENUM_ELEMENTS };
     mutable CachableAmount m_amounts[AMOUNTTYPE_ENUM_ELEMENTS];
     /**
      * This flag is true if all m_amounts caches are empty. This is particularly
@@ -296,6 +296,7 @@ public:
         m_amounts[CREDIT].Reset();
         m_amounts[IMMATURE_CREDIT].Reset();
         m_amounts[AVAILABLE_CREDIT].Reset();
+        m_amounts[FEE].Reset();
         fChangeCached = false;
         m_is_cache_empty = true;
     }
@@ -337,6 +338,22 @@ public:
 
         return inputs;
     }
+
+    // MW: TODO - Also return pegout script id?
+    std::vector<GenericOutputID> GetOutputIDs(const bool include_partial_mweb) const
+    {
+        std::vector<GenericOutputID> output_ids;
+
+        for (const GenericOutput& output : tx->GetOutputs()) {
+            output_ids.push_back(output.GetID());
+        }
+
+        if (include_partial_mweb && mweb_wtx_info && mweb_wtx_info->received_coin) {
+            output_ids.push_back(mweb_wtx_info->received_coin->output_id);
+        }
+
+        return output_ids;
+    }
     
     // MW: TODO - Check all uses to see if they should also include pegout scripts
     std::vector<GenericOutput> GetOutputs() const
@@ -365,8 +382,7 @@ public:
 
     GenericOutput GetOutput(const GenericOutputID& output_id) const noexcept
     {
-        // We don't need to check mweb_wtx_info->received_coin,
-        // because CTransaction::GetOutput will always build a GenericOutput for MWEB outputs.
+        // MW: TODO - Need to check received_coin
         return tx->GetOutput(output_id);
     }
 
@@ -388,6 +404,12 @@ public:
     bool IsPartialMWEB() const
     {
         return tx->IsNull() && mweb_wtx_info;
+    }
+
+    // MW: TODO - Rename this and provide accurate description
+    bool HasPartialMWEBReceive() const
+    {
+        return mweb_wtx_info && mweb_wtx_info->received_coin;
     }
 
     // Disable copying of CWalletTx objects to prevent bugs where instances get

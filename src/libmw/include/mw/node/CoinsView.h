@@ -51,14 +51,14 @@ public:
     virtual IMMR::Ptr GetOutputPMMR() const noexcept = 0;
 
     /// <summary>
-    /// Checks if there's a unspent coin in the view with a matching commitment.
+    /// Checks if there's an unspent coin in the view with a matching ID.
     /// </summary>
     /// <param name="output_id">The output ID of the UTXO to look for.</param>
     /// <returns>True if there's a matching unspent coin. Otherwise, false.</returns>
     bool HasCoin(const mw::Hash& output_id) const noexcept { return GetUTXO(output_id) != nullptr; }
 
     /// <summary>
-    /// Checks if there's a unspent coin with a matching commitment in the view that has not been flushed to the parent.
+    /// Checks if there's an unspent coin with a matching ID in the view that has not been flushed to the parent.
     /// This is useful for checking if a coin is in the mempool but not yet on chain.
     /// </summary>
     /// <param name="output_id">The output ID of the coin to look for.</param>

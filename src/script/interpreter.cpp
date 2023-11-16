@@ -336,7 +336,6 @@ static bool EvalChecksigPreTapscript(const valtype& vchSig, const valtype& vchPu
         return false;
     }
     fSuccess = checker.CheckECDSASignature(vchSig, vchPubKey, scriptCode, sigversion);
-
     if (!fSuccess && (flags & SCRIPT_VERIFY_NULLFAIL) && vchSig.size())
         return set_error(serror, SCRIPT_ERR_SIG_NULLFAIL);
 
@@ -1585,7 +1584,9 @@ uint256 SignatureHash(const CScript& scriptCode, const T& txTo, unsigned int nIn
 
 
         if ((nHashType & 0x1f) != SIGHASH_SINGLE && (nHashType & 0x1f) != SIGHASH_NONE) {
-            hashOutputs = cacheready ? cache->hashOutputs : SHA256Uint256(GetOutputsSHA256(txTo));
+            hashOutputs = SHA256Uint256(GetOutputsSHA256(txTo));
+            // MW: TODO - Changing pegin output scripts after signing MWEB transactions needs to invalidate PrecomputeTxData. For now, we just bypass the cache.
+            // hashOutputs = cacheready ? cache->hashOutputs : SHA256Uint256(GetOutputsSHA256(txTo));
         } else if ((nHashType & 0x1f) == SIGHASH_SINGLE && nIn < txTo.vout.size()) {
             HashWriter ss{};
             ss << txTo.vout[nIn];
@@ -1611,7 +1612,6 @@ uint256 SignatureHash(const CScript& scriptCode, const T& txTo, unsigned int nIn
         ss << txTo.nLockTime;
         // Sighash type
         ss << nHashType;
-
         return ss.GetHash();
     }
 

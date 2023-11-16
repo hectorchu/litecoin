@@ -169,7 +169,7 @@ GenericOutput CTransaction::GetOutput(const GenericOutputID& output_id) const no
     if (output_id.IsMWEB()) {
         mw::Output output;
         bool has_output = mweb_tx.GetOutput(output_id.ToMWEB(), output);
-        assert(has_output);
+        assert(has_output); // MW: TODO - This should fail more gracefully. Maybe just return GenericOutput?
         return GenericOutput{output};
     } else {
         const COutPoint& outpoint = output_id.ToOutPoint();

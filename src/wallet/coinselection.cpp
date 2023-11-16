@@ -340,7 +340,7 @@ void OutputGroup::Insert(const GenericWalletUTXO& output, size_t ancestors, size
     fee += coin.GetFee();
 
     if (!coin.IsMWEB()) {
-        CWalletUTXO& out = coin.GetOutput();
+        CWalletUTXO& out = coin.GetLTC();
         out.long_term_fee = out.input_bytes < 0 ? 0 : m_long_term_feerate.GetFee(out.input_bytes, 0);
         long_term_fee += out.long_term_fee;
     }

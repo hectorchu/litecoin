@@ -1,6 +1,5 @@
 #pragma once
 
-#include <mweb/mweb_spend.h>
 #include <primitives/transaction.h>
 #include <script/address.h>
 #include <util/result.h>
@@ -28,7 +27,6 @@ class TxBuilder
     std::vector<GenericWalletUTXO> m_selected_coins;
     CMutableTransaction m_tx;
     ChangeBuilder m_change;
-    //MWEB::MutableMWEBTx m_mweb; // MW: TODO - Use the mweb_tx in m_tx
 
 public:
     using Ptr = std::shared_ptr<TxBuilder>;
@@ -53,23 +51,28 @@ private:
     // 3. Select LTC and MWEB inputs in order to create a LTC->MWEB->LTC pegin-pegout transaction.
     util::Result<SelectionResult> SelectInputCoins(const CoinsResult& available_coins);
     
-    CAmount CalcSelectionTarget(const CoinSelectionParams& coin_selection_params, const TxType& tx_type) const;
+    CAmount CalcSelectionTarget(const TxType& tx_type) const;
 
     std::optional<util::Error> AddInputs(const std::vector<GenericWalletUTXO>& shuffled_inputs);
-    std::optional<util::Error> AddOutputs(const CoinSelectionParams& coin_selection_params, const SelectionResult& selection_result);
-    std::optional<util::Error> SubtractFeeFromOutputs(const CoinSelectionParams& coin_selection_params);
-    std::optional<util::Error> AddMWEBTx();
+    std::optional<util::Error> AddOutputs(const SelectionResult& selection_result);
+    std::optional<util::Error> SubtractFeeFromOutputs();
+    std::optional<util::Error> SignMWEBTx();
+
+    TxType GetTxType() const noexcept { return m_selection_params.m_tx_type; }
 
     // Returns the sum of fees paid on the LTC side and the MWEB side.
     // fee_paid = (sum(LTC inputs) - sum(LTC outputs)) + sum(MWEB kernel fees)
     CAmount GetFeePaid() const;
 
+    // The effective fee rate.
+    const CFeeRate& GetFeeRate() const noexcept { return m_selection_params.m_effective_feerate; }
+
     // The fee to be paid on the LTC side
-    util::Result<CAmount> CalcLTCFee(const CFeeRate& fee_rate) const;
+    util::Result<CAmount> CalcLTCFee() const;
 
     // The fee to be paid on the MWEB side.
     // This includes all MWEB inputs, outputs, and kernels, as well as any HogEx outputs for pegouts.
-    CAmount CalcMWEBFee(const CFeeRate& feeRate) const noexcept;
+    CAmount CalcMWEBFee() const noexcept;
 
     util::Result<size_t> CalcMaxSignedTxBytes(const CMutableTransaction& tx) const;
 };

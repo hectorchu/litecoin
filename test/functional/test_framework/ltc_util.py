@@ -60,7 +60,6 @@ def make_utxo(test_framework, node, amount, confirmed=True, scriptPubKey=DUMMY_P
 
 def get_hogex_tx(node: TestNode) -> Optional[CTransaction]:
     best_block = node.getblock(node.getbestblockhash(), 2)
-    print("best_block: {}".format(best_block))
     hogex_tx = from_hex(CTransaction(), best_block['tx'][-1]['hex'])
 
     if hogex_tx.is_valid() and hogex_tx.hogex:
@@ -92,8 +91,8 @@ def create_hogex(node, mweb_hash) -> Optional[CTransaction]:
         return None
 
     tx = CTransaction()
-    tx.vin = [CTxIn(COutPoint(int(hogex_tx['txid'], 16), 0))]
-    tx.vout = [CTxOut(hogex_tx.vout[0].nValue, hogaddr_script(mweb_hash))]
+    tx.vin.append(CTxIn(COutPoint(int(hogex_tx.rehash(), 16), 0)))
+    tx.vout.append(CTxOut(hogex_tx.vout[0].nValue, hogaddr_script(mweb_hash)))
     tx.hogex = True
     tx.rehash()
     return tx
@@ -122,8 +121,8 @@ def create_non_hd_wallet(chain, options) -> str:
         rpchost=None,
         timewait=60,
         timeout_factor=1.0,
-        bitcoind=os.path.join(bin_dir, 'litecoind'),
-        bitcoin_cli=os.path.join(bin_dir, 'litecoin-cli'),
+        litecoind=os.path.join(bin_dir, 'litecoind'),
+        litecoin_cli=os.path.join(bin_dir, 'litecoin-cli'),
         version=version,
         coverage_dir=None,
         cwd=options.tmpdir,

@@ -715,6 +715,12 @@ TransactionError LegacyScriptPubKeyMan::FillPSBT(PartiallySignedTransaction& psb
     if (n_signed) {
         *n_signed = 0;
     }
+
+    // MW: TODO - if sign == true, sign MWEB components here?
+    if (sign) {
+        PSBTSignMWEBTx(HidingSigningProvider(this, !sign, !bip32derivs), psbtx);
+    }
+
     for (unsigned int i = 0; i < psbtx.inputs.size(); ++i) {
         PSBTInput& input = psbtx.inputs.at(i);
 
@@ -2789,6 +2795,12 @@ TransactionError DescriptorScriptPubKeyMan::FillPSBT(PartiallySignedTransaction&
     if (n_signed) {
         *n_signed = 0;
     }
+
+    // MW: TODO - if sign == true, sign MWEB components here?
+    if (sign) {
+        PSBTSignMWEBTx(FlatSigningProvider(), psbtx);
+    }
+
     for (unsigned int i = 0; i < psbtx.inputs.size(); ++i) {
         PSBTInput& input = psbtx.inputs.at(i);
 

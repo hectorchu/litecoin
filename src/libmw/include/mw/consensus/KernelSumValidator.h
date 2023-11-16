@@ -100,7 +100,7 @@ private:
         }
 
         if (sum_utxo_commitment != sum_excess_commitment) {
-            LOG_ERROR_F(
+            LOG_ERROR(
                 "UTXO sum {} does not match kernel excess sum {}.",
                 sum_utxo_commitment,
                 sum_excess_commitment

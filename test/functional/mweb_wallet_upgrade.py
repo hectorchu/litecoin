@@ -72,8 +72,7 @@ class MWEBWalletUpgradeTest(LitecoinTestFramework):
         assert_equal(tx1['amount'], 25)
         assert_equal(tx1['details'][0]['address'], mweb_addr)
 
-        node0.generate(1)
-        self.sync_all()
+        self.generate(node0, 1, sync_fun=self.sync_all)
 
         #
         # Verify that MWEB coins can be spent by upgraded wallet (node1)
@@ -87,7 +86,7 @@ class MWEBWalletUpgradeTest(LitecoinTestFramework):
         # Mine 1 block and verify transaction confirms
         #
         self.log.info("Mining block to verify it confirms")
-        node0.generate(1)
+        self.generate(node0, 1, sync_fun=self.no_op)
         tx2 = node0.gettransaction(txid=tx2_id)
         assert_equal(tx2['confirmations'], 1)
         assert_equal(tx2['amount'], 10)

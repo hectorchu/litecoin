@@ -180,50 +180,25 @@ FundTransactionResult RawTransaction::FundTransaction(CWallet& wallet, const int
         throw JSONRPCError(RPC_WALLET_ERROR, util::ErrorString(res).original);
     }
     const auto& txr = *res;
-    CTransactionRef tx_new = txr.tx;
-    tx.vout = tx_new->vout;
-
-    for (const PegOutCoin& pegout : tx_new->mweb_tx.GetPegOuts()) {
-        tx.mweb_tx.AddPegout(mw::PegOutRecipient{ pegout.GetScriptPubKey(), pegout.GetAmount(), false });
-    }
-
-    for (const PegInCoin& pegin : tx_new->mweb_tx.GetPegIns()) {
-        tx.mweb_tx.SetPeginAmount(tx.mweb_tx.GetPeginAmount().value_or(0) + pegin.GetAmount());
-    }
-
-    //if (txr.change_pos.IsLTC()) {
-    //    const int nChangePos = (int)txr.change_pos.ToLTC();
-    //    tx.vout.insert(tx.vout.begin() + nChangePos, tx_new->vout[nChangePos]);
-    //    //CRecipient change_recipient{GenericAddress(tx_new->vout[nChangePos].scriptPubKey), tx_new->vout[nChangePos].nValue, false};
-    //    //m_recipients.insert_at((size_t)nChangePos, std::move(change_recipient));
-    //}
-    //assert(tx.vout.size() == tx_new->vout.size());
-    //// MW: TODO - Copy finalized MWEB inputs, outputs, and kernels to tx.mweb_tx
-    //
-    //// Copy output amounts from new transaction; they may have had the fee
-    //// subtracted from them.
-    //for (unsigned int idx = 0; idx < tx_new->vout.size(); idx++) {
-    //    tx.vout[idx].nValue = tx_new->vout[idx].nValue;
-    //    //m_recipients[idx].nAmount = tx_new->vout[idx].nValue;
-    //}
+    tx = txr.tx;
 
     // Add new txins while keeping original txin scriptSig/order.
-    for (const GenericInput& tx_input : tx_new->GetInputs()) {
-        if (!coinControl.IsSelected(tx_input.GetID())) {
-            if (tx_input.IsMWEB()) {
-                mw::MutableInput mweb_input(tx_input.ToMWEB());
-                // MW: TODO - Finish populating mweb_input
-                tx.mweb_tx.inputs.push_back(std::move(mweb_input));
-            } else {
-                tx.vin.push_back(tx_input.GetTxIn());
-            }
-        }
+    for (const GenericInput& tx_input : tx.GetInputs()) {
+        //if (!coinControl.IsSelected(tx_input.GetID())) {
+        //    if (tx_input.IsMWEB()) {
+        //        mw::MutableInput mweb_input(tx_input.ToMWEB());
+        //        // MW: TODO - Finish populating mweb_input
+        //        tx.mweb_tx.inputs.push_back(std::move(mweb_input));
+        //    } else {
+        //        tx.vin.push_back(tx_input.GetTxIn());
+        //    }
+        //}
         if (lockUnspents) {
             wallet.LockCoin(tx_input.GetID());
         }
     }
 
-    return FundTransactionResult{txr.tx, txr.fee, txr.change_pos};
+    return FundTransactionResult{txr.fee, txr.change_pos};
 }
 
 RawTransaction RawTransaction::FromHex(const std::string& hex, const bool try_no_witness, const bool try_witness)
@@ -277,14 +252,13 @@ PartiallySignedTransaction RawTransaction::ToPSBT(const CWallet& wallet) const
 {
     // Make a blank psbt
     PartiallySignedTransaction psbtx(tx, 2);
-    LogPrintf("ToPSBT() - Blank PSBT created\n");
-    psbtx.SetupFromTx(tx);
 
     // First fill transaction with our data without signing,
     // so external signers are not asked sign more than once.
     bool complete;
+    LogPrintf("ToPSBT() - Calling FillPSBT(sign=false, finalize=true)\n");
     wallet.FillPSBT(psbtx, complete, SIGHASH_DEFAULT, false, true);
-    LogPrintf("ToPSBT() - BIP32 Derived\n");
+    LogPrintf("ToPSBT() - Calling FillPSBT(sign=true, finalize=false)\n");
     const TransactionError err{wallet.FillPSBT(psbtx, complete, SIGHASH_DEFAULT, true, false)};
     if (err != TransactionError::OK) {
         LogPrintf("ToPSBT() - Signed with error\n");

@@ -285,12 +285,12 @@ struct PSBTInput
 
     uint32_t m_psbt_version;
 
-    GenericInput ToGenericInput() const
+    GenericOutputID GetID() const
     {
         if (mweb_output_id.has_value()) {
-            return GenericInput{*mweb_output_id};
+            return GenericOutputID{*mweb_output_id};
         } else {
-            return CTxIn(COutPoint(prev_txid, prev_out.value_or(0)), CScript()); // MW: TODO - Figure this out
+            return GenericOutputID(COutPoint(prev_txid, prev_out.value_or(0)));
         }
     }
 
@@ -1629,7 +1629,7 @@ struct PSBTKernel
     std::optional<CAmount> fee;
     std::optional<CAmount> pegin_amount;
     std::vector<PegOutCoin> pegouts;
-    std::optional<uint64_t> lock_height;
+    std::optional<int32_t> lock_height;
     std::vector<uint8_t> extra_data;
     std::optional<Signature> sig;
 
@@ -1859,7 +1859,7 @@ struct PartiallySignedTransaction
             SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_UNSIGNED_TX));
 
             // Write serialized tx to a stream
-            OverrideStream<Stream> os(&s, s.GetType(), s.GetVersion() | SERIALIZE_TRANSACTION_NO_WITNESS);
+            OverrideStream<Stream> os(&s, s.GetType(), s.GetVersion() | SERIALIZE_TRANSACTION_NO_WITNESS | SERIALIZE_NO_MWEB);
             SerializeToVector(os, GetUnsignedTx());
         }
 
@@ -2287,7 +2287,7 @@ PrecomputedTransactionData PrecomputePSBTData(const PartiallySignedTransaction& 
 bool PSBTInputSigned(const PSBTInput& input);
 
 /** Checks whether a PSBTInput is already signed by doing script verification using final fields. */
-bool PSBTInputSignedAndVerified(const PartiallySignedTransaction psbt, unsigned int input_index, const PrecomputedTransactionData* txdata);
+bool PSBTInputSignedAndVerified(const PartiallySignedTransaction& psbt, unsigned int input_index, const PrecomputedTransactionData* txdata);
 
 /** Signs a PSBTInput, verifying that all provided data matches what is being signed.
  *
@@ -2307,6 +2307,8 @@ size_t CountPSBTUnsignedInputs(const PartiallySignedTransaction& psbt);
  * This fills in the redeem_script, witness_script, and hd_keypaths where possible.
  */
 void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransaction& psbt, int index);
+
+void PSBTSignMWEBTx(const SigningProvider& provider, PartiallySignedTransaction& psbtx);
 
 /**
  * Finalizes a PSBT if possible, combining partial signatures.

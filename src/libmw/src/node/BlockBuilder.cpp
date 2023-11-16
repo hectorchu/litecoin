@@ -47,7 +47,7 @@ bool BlockBuilder::AddTransaction(const Transaction::CPtr& pTransaction, const s
 
     for (const PegInCoin& pegin : pegin_coins) {
         if (pegin_ids.find(pegin.GetKernelID()) == pegin_ids.end()) {
-            LOG_ERROR_F("Pegin kernel {} not found", pegin.GetKernelID());
+            LOG_ERROR("Pegin kernel {} not found", pegin.GetKernelID());
             return false;
         }
     }
@@ -56,18 +56,18 @@ bool BlockBuilder::AddTransaction(const Transaction::CPtr& pTransaction, const s
     try {
         pTransaction->Validate();
     } catch (std::exception& e) {
-        LOG_DEBUG_F("Failed to add transaction {}. Error: {}", pTransaction, e.what());
+        LOG_DEBUG("Failed to add transaction {}. Error: {}", pTransaction, e.what());
     }
 
     // Make sure all inputs are available.
     for (const Input& input : pTransaction->GetInputs()) {
         //if (m_stagedInputs.count(input.GetOutputID()) > 0) { // MW: TODO - Is this necessary, or are duplicate output checks enough?
-        //    LOG_ERROR_F("Input {} already staged", input.GetOutputID());
+        //    LOG_ERROR("Input {} already staged", input.GetOutputID());
         //    return false;
         //}
 
         if (!m_pCoinsView->HasCoin(input.GetOutputID()) && m_stagedOutputs.count(input.GetOutputID()) == 0) {
-            LOG_ERROR_F("Input {} not found on chain", input.GetOutputID());
+            LOG_ERROR("Input {} not found on chain", input.GetOutputID());
             return false;
         }
     }
@@ -75,12 +75,12 @@ bool BlockBuilder::AddTransaction(const Transaction::CPtr& pTransaction, const s
     // Make sure no duplicate outputs already on chain.
     for (const mw::Output& output : pTransaction->GetOutputs()) {
         if (m_pCoinsView->HasCoin(output.GetOutputID())) {
-            LOG_ERROR_F("Output {} already on chain", output.GetOutputID());
+            LOG_ERROR("Output {} already on chain", output.GetOutputID());
             return false;
         }
 
         if (m_stagedOutputs.count(output.GetOutputID()) > 0) {
-            LOG_ERROR_F("Output {} already staged", output.GetOutputID());
+            LOG_ERROR("Output {} already staged", output.GetOutputID());
             return false;
         }
     }

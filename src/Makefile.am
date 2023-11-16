@@ -23,8 +23,8 @@ noinst_PROGRAMS =
 TESTS =
 BENCHMARKS =
 
-LIBMW_CPPFLAGS=-I$(srcdir)/libmw/include -I$(srcdir)/libmw/deps/caches/include -I$(srcdir)/libmw/deps/mio/include -I$(srcdir)/libmw/deps/crypto/include $(BOOST_CPPFLAGS) $(LIBFMT_CFLAGS)
-BITCOIN_INCLUDES=-I$(builddir) -I$(srcdir)/$(MINISKETCH_INCLUDE_DIR_INT) -I$(srcdir)/secp256k1/include -I$(srcdir)/$(UNIVALUE_INCLUDE_DIR_INT) $(LEVELDB_CPPFLAGS) $(CRYPTO_CFLAGS) $(LIBMW_CPPFLAGS)
+LIBMW_INCLUDES=-I$(srcdir)/libmw/include -I$(srcdir)/libmw/deps/caches/include -I$(srcdir)/libmw/deps/mio/include -I$(srcdir)/libmw/deps/crypto/include
+BITCOIN_INCLUDES=-I$(builddir) -I$(srcdir)/$(MINISKETCH_INCLUDE_DIR_INT) -I$(srcdir)/secp256k1/include -I$(srcdir)/$(UNIVALUE_INCLUDE_DIR_INT) $(LEVELDB_CPPFLAGS) $(CRYPTO_CFLAGS) $(LIBMW_INCLUDES)
 
 LIBBITCOIN_NODE=libbitcoin_node.a
 LIBBITCOIN_COMMON=libbitcoin_common.a
@@ -34,7 +34,6 @@ LIBBITCOIN_UTIL=libbitcoin_util.a
 LIBBITCOIN_CRYPTO_BASE=crypto/libbitcoin_crypto_base.la
 LIBBITCOINQT=qt/libbitcoinqt.a
 LIBSECP256K1=secp256k1/libsecp256k1.la
-LIBMW=libmw.a
 
 if ENABLE_ZMQ
 LIBBITCOIN_ZMQ=libbitcoin_zmq.a
@@ -77,7 +76,6 @@ $(LIBSECP256K1): $(wildcard secp256k1/src/*.h) $(wildcard secp256k1/src/*.c) $(w
 EXTRA_LIBRARIES += \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_COMMON) \
-  $(LIBMW) \
   $(LIBBITCOIN_CONSENSUS) \
   $(LIBBITCOIN_NODE) \
   $(LIBBITCOIN_CLI) \
@@ -115,28 +113,6 @@ endif
 if BUILD_BITCOIN_CHAINSTATE
   bin_PROGRAMS += litecoin-chainstate
 endif
-
-libmw_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-libmw_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-libmw_a_SOURCES = \
-	libmw/src/db/CoinDB.cpp \
-	libmw/src/db/LeafDB.cpp \
-	libmw/src/db/MMRInfoDB.cpp \
-	libmw/src/file/File.cpp \
-	libmw/src/mmr/ILeafSet.cpp \
-	libmw/src/mmr/IMMR.cpp \
-	libmw/src/mmr/Index.cpp \
-	libmw/src/mmr/LeafSet.cpp \
-	libmw/src/mmr/LeafSetCache.cpp \
-	libmw/src/mmr/MemMMR.cpp \
-	libmw/src/mmr/MMRUtil.cpp \
-	libmw/src/mmr/PMMRCache.cpp \
-	libmw/src/mmr/PMMR.cpp \
-	libmw/src/mmr/PruneList.cpp \
-	libmw/src/node/BlockValidator.cpp \
-	libmw/src/node/BlockBuilder.cpp \
-	libmw/src/node/CoinsViewCache.cpp \
-	libmw/src/node/CoinsViewDB.cpp
 
 .PHONY: FORCE check-symbols check-security
 # bitcoin core #
@@ -216,7 +192,6 @@ BITCOIN_CORE_H = \
   mweb/mweb_models.h \
   mweb/mweb_node.h \
   mweb/mweb_policy.h \
-  mweb/mweb_spend.h \
   mweb/mweb_wallet.h \
   net.h \
   net_permissions.h \
@@ -411,6 +386,8 @@ libbitcoin_node_a_SOURCES = \
   kernel/coinstats.cpp \
   kernel/context.cpp \
   kernel/mempool_persist.cpp \
+  libmw/src/node/BlockValidator.cpp \
+  libmw/src/node/BlockBuilder.cpp \
   mapport.cpp \
   mweb/mweb_miner.cpp \
   mweb/mweb_node.cpp \
@@ -494,7 +471,6 @@ libbitcoin_wallet_a_SOURCES = \
   libmw/src/wallet/Keychain.cpp \
   libmw/src/wallet/sign.cpp \
   libmw/src/wallet/TxBuilder.cpp \
-  mweb/mweb_spend.cpp \
   mweb/mweb_wallet.cpp \
   wallet/change.cpp \
   wallet/coincontrol.cpp \
@@ -697,6 +673,21 @@ libbitcoin_common_a_SOURCES = \
   init/common.cpp \
   key.cpp \
   key_io.cpp \
+  libmw/src/db/CoinDB.cpp \
+  libmw/src/db/LeafDB.cpp \
+  libmw/src/db/MMRInfoDB.cpp \
+  libmw/src/mmr/ILeafSet.cpp \
+  libmw/src/mmr/IMMR.cpp \
+  libmw/src/mmr/Index.cpp \
+  libmw/src/mmr/LeafSet.cpp \
+  libmw/src/mmr/LeafSetCache.cpp \
+  libmw/src/mmr/MemMMR.cpp \
+  libmw/src/mmr/MMRUtil.cpp \
+  libmw/src/mmr/PMMRCache.cpp \
+  libmw/src/mmr/PMMR.cpp \
+  libmw/src/mmr/PruneList.cpp \
+  libmw/src/node/CoinsViewCache.cpp \
+  libmw/src/node/CoinsViewDB.cpp \
   merkleblock.cpp \
   mweb/mweb_policy.cpp \
   net_types.cpp \
@@ -732,6 +723,7 @@ libbitcoin_util_a_SOURCES = \
   interfaces/echo.cpp \
   interfaces/handler.cpp \
   interfaces/init.cpp \
+  libmw/src/file/File.cpp \
   logging.cpp \
   random.cpp \
   randomenv.cpp \
@@ -802,8 +794,7 @@ bitcoin_bin_ldadd = \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBLEVELDB) \
   $(LIBMEMENV) \
-  $(LIBSECP256K1) \
-  $(LIBMW)
+  $(LIBSECP256K1)
 
 bitcoin_bin_ldadd += $(BDB_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(NATPMP_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS) $(SQLITE_LIBS)
 
@@ -855,8 +846,7 @@ litecoin_tx_LDADD = \
   $(LIBBITCOIN_CONSENSUS) \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBSECP256K1) \
-  $(CRYPTO_LIBS) \
-  $(LIBMW)
+  $(CRYPTO_LIBS)
 
 # litecoin-wallet binary #
 litecoin_wallet_SOURCES = bitcoin-wallet.cpp
@@ -875,8 +865,7 @@ litecoin_wallet_LDADD = \
   $(LIBSECP256K1) \
   $(BDB_LIBS) \
   $(SQLITE_LIBS) \
-  $(CRYPTO_LIBS) \
-  $(LIBMW)
+  $(CRYPTO_LIBS)
 
 if TARGET_WINDOWS
 litecoin_wallet_SOURCES += bitcoin-wallet-res.rc
@@ -1035,7 +1024,7 @@ libbitcoinconsensus_la_SOURCES = support/cleanse.cpp $(crypto_libbitcoin_crypto_
 
 libbitcoinconsensus_la_LDFLAGS = $(AM_LDFLAGS) -no-undefined $(RELDFLAGS)
 libbitcoinconsensus_la_LIBADD = $(LIBSECP256K1) $(CRYPTO_LIBS)
-libbitcoinconsensus_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(builddir)/obj -I$(srcdir)/secp256k1/include -DBUILD_BITCOIN_INTERNAL $(SSL_CFLAGS) $(LIBMW_CPPFLAGS)
+libbitcoinconsensus_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(builddir)/obj -I$(srcdir)/secp256k1/include -DBUILD_BITCOIN_INTERNAL $(SSL_CFLAGS) $(LIBMW_INCLUDES)
 libbitcoinconsensus_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
 endif

@@ -35,18 +35,13 @@ class MWEBBasicTest(BitcoinTestFramework):
         assert_equal(len(utxos), 2)
         utxos.sort(key=lambda x: x['amount'])
 
-        utxo0 = utxos[0]
-        utxo1 = utxos[1]
-        if utxos[0]['address'] != addr0:
-            utxo0 = utxos[1]
-            utxo1 = utxos[0]
-          
-        assert utxo0['amount'] == 10 and utxo0['address'] == addr0
-        assert 2 < utxo1['amount'] < 2.5 # change from single 12.5 LTC coinbase being spent
+        assert utxos[1]['amount'] == 10 and utxos[1]['address'] == addr0
+        assert 2 < utxos[0]['amount'] < 2.5 # change from single 12.5 LTC coinbase being spent
 
         self.log.info("Send MWEB coins to node 1")
         addr1 = self.nodes[1].getnewaddress(address_type='mweb')
-        self.nodes[0].sendtoaddress(addr1, 5)
+        n0_to_addr1_txid = self.nodes[0].sendtoaddress(addr1, 5)
+        assert_equal(set(self.nodes[0].getrawmempool()), {n0_to_addr1_txid})
         self.generate(self.nodes[0], 1, sync_fun=self.sync_all)
 
         self.log.info("Check MWEB coins are spent on node 0")

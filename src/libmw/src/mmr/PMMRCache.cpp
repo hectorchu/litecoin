@@ -58,7 +58,7 @@ mw::Hash PMMRCache::GetHash(const Index& idx) const
 
 void PMMRCache::Rewind(const uint64_t numLeaves)
 {
-    LOG_TRACE_F("Rewinding to {}", numLeaves);
+    LOG_TRACE("Rewinding to {}", numLeaves);
 
     LeafIndex nextLeaf = LeafIndex::At(numLeaves);
     if (nextLeaf <= m_firstLeaf) {
@@ -88,7 +88,7 @@ void PMMRCache::BatchWrite(
     const std::vector<Leaf>& leaves,
     const std::unique_ptr<mw::DBBatch>&)
 {
-    LOG_TRACE_F("Writing batch {}", firstLeafIdx.Get());
+    LOG_TRACE("Writing batch {}", firstLeafIdx.Get());
     Rewind(firstLeafIdx.Get());
     for (const Leaf& leaf : leaves) {
         Add(leaf.vec());
@@ -97,7 +97,7 @@ void PMMRCache::BatchWrite(
 
 void PMMRCache::Flush(const uint32_t file_index, const std::unique_ptr<mw::DBBatch>& pBatch)
 {
-    LOG_TRACE_F(
+    LOG_TRACE(
         "Flushing {} leaves at {} with file index {}",
         m_leaves.size(),
         m_firstLeaf.Get(),

@@ -118,6 +118,9 @@ public:
     //! Get wallet address list.
     virtual std::vector<WalletAddress> getAddresses() const = 0;
 
+    //! Look up destination for output, return whether found.
+    virtual bool extractOutputDestination(const GenericOutput& output, CTxDestination& dest) = 0;
+
     //! Get receive requests.
     virtual std::vector<std::string> getAddressReceiveRequests() = 0;
 
@@ -225,11 +228,11 @@ public:
     //! Return whether transaction output belongs to wallet.
     virtual wallet::isminetype txoutIsMine(const GenericOutput& output) = 0;
 
+    //! Return the value of the output.
+    virtual CAmount getValue(const GenericOutput& txout) = 0;
+
     //! Return debit amount if transaction input belongs to wallet.
     virtual CAmount getDebit(const GenericInput& input, wallet::isminefilter filter) = 0;
-
-    //! Return credit amount if transaction input belongs to wallet.
-    virtual CAmount getCredit(const GenericOutput& output, wallet::isminefilter filter) = 0;
 
     //! Return AvailableCoins + LockedCoins grouped by wallet address.
     //! (put change in one group with wallet address)
@@ -393,7 +396,6 @@ struct WalletTxIn
 //! Wallet transaction output.
 struct WalletTxOut
 {
-    GenericOutput output;
     wallet::isminetype is_mine;
     GenericAddress address;
     wallet::isminetype address_is_mine;

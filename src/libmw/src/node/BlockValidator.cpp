@@ -17,7 +17,7 @@ bool BlockValidator::ValidateBlock(
         ValidatePegOutCoins(pBlock, pegOutCoins);
         return true;
     } catch (const std::exception& e) {
-        LOG_ERROR_F("Failed to validate {}. Error: {}", *pBlock, e);
+        LOG_ERROR("Failed to validate {}. Error: {}", *pBlock, e);
     }
 
     return false;

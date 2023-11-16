@@ -235,72 +235,86 @@ CoinsResult AvailableCoins(const CWallet& wallet,
 
         bool tx_from_me = CachedTxIsFromMe(wallet, wtx, ISMINE_ALL);
         
-        for (const GenericOutput& output : wtx.GetOutputs()) {
-            if (coinControl && ((output.IsMWEB() && coinControl->fPegIn) || (!output.IsMWEB() && coinControl->fPegOut)))
+        for (const GenericOutputID& output_id : wtx.GetOutputIDs(true)) {
+            if (coinControl && ((output_id.IsMWEB() && coinControl->fPegIn) || (!output_id.IsMWEB() && coinControl->fPegOut)))
                 continue;
             
-            CAmount value = wallet.GetValue(output);
+            CAmount value = wallet.GetValue(wtx, output_id);
             if (value < nMinimumAmount || value > nMaximumAmount)
                 continue;
 
-            if (coinControl && coinControl->HasSelected() && !coinControl->m_allow_other_inputs && !coinControl->IsSelected(output.GetID()))
+            if (coinControl && coinControl->HasSelected() && !coinControl->m_allow_other_inputs && !coinControl->IsSelected(output_id))
                 continue;
 
-            if (wallet.IsLockedCoin(output.GetID()))
+            if (wallet.IsLockedCoin(output_id))
                 continue;
 
-            if (wallet.IsSpent(output.GetID()))
+            if (wallet.IsSpent(output_id))
                 continue;
 
-            isminetype mine = wallet.IsMine(output);
+            isminetype mine = wallet.IsMine(output_id);
 
             if (mine == ISMINE_NO) {
                 continue;
             }
 
-            if (!allow_used_addresses && wallet.IsSpentKey(output)) {
+            if (!allow_used_addresses && wallet.IsSpentKey(wtx, output_id)) {
                 continue;
             }
-            
-            std::unique_ptr<SigningProvider> provider = output.IsMWEB() ? nullptr : wallet.GetSolvingProvider(output.GetScriptPubKey());
 
-            int input_bytes = output.IsMWEB() ? 0 : CalculateMaximumSignedInputSize(output.GetTxOut(), COutPoint(), provider.get(), coinControl);
-            // Because CalculateMaximumSignedInputSize just uses ProduceSignature and makes a dummy signature,
-            // it is safe to assume that this input is solvable if input_bytes is greater -1.
-            bool solvable = input_bytes > -1;
-            bool spendable = ((mine & ISMINE_SPENDABLE) != ISMINE_NO) || (((mine & ISMINE_WATCH_ONLY) != ISMINE_NO) && (coinControl && coinControl->fAllowWatchOnly && solvable));
-
-            // Filter by spendable outputs only
-            if (!spendable && only_spendable) continue;
-
-            // MW: TODO - Handle MWEB outputs
-            
-            // If the Output is P2SH and spendable, we want to know if it is
-            // a P2SH (legacy) or one of P2SH-P2WPKH, P2SH-P2WSH (P2SH-Segwit). We can determine
-            // this from the redeemScript. If the Output is not spendable, it will be classified
-            // as a P2SH (legacy), since we have no way of knowing otherwise without the redeemScript
-            CScript script;
-            bool is_from_p2sh{false};
-            if (output.GetScriptPubKey().IsPayToScriptHash() && solvable) {
-                CTxDestination destination;
-                if (!ExtractDestination(output.GetScriptPubKey(), destination))
+            if (output_id.IsMWEB()) {
+                mw::Coin mweb_coin;
+                if (!wallet.GetCoin(output_id.ToMWEB(), mweb_coin)) {
                     continue;
-                const CScriptID& hash = CScriptID(std::get<ScriptHash>(destination));
-                if (!provider->GetCScript(hash, script))
+                }
+
+                StealthAddress address;
+                if (!wallet.GetMWWallet()->GetStealthAddress(mweb_coin, address)) {
                     continue;
-                is_from_p2sh = true;
+                }
+
+                MWWalletUTXO mweb_utxo{mweb_coin, nDepth, address, tx_from_me, wtx.GetHash()};
+                result.Add(OutputType::MWEB, mweb_utxo);
             } else {
-                script = output.GetScriptPubKey();
+                const CTxOut& txout = wtx.tx->vout[output_id.ToOutPoint().n];
+                std::unique_ptr<SigningProvider> provider = wallet.GetSolvingProvider(txout.scriptPubKey);
+
+                int input_bytes = CalculateMaximumSignedInputSize(txout, COutPoint(), provider.get(), coinControl);
+                // Because CalculateMaximumSignedInputSize just uses ProduceSignature and makes a dummy signature,
+                // it is safe to assume that this input is solvable if input_bytes is greater -1.
+                bool solvable = input_bytes > -1;
+                bool spendable = ((mine & ISMINE_SPENDABLE) != ISMINE_NO) || (((mine & ISMINE_WATCH_ONLY) != ISMINE_NO) && (coinControl && coinControl->fAllowWatchOnly && solvable));
+
+                // Filter by spendable outputs only
+                if (!spendable && only_spendable) continue;
+
+                // If the Output is P2SH and spendable, we want to know if it is
+                // a P2SH (legacy) or one of P2SH-P2WPKH, P2SH-P2WSH (P2SH-Segwit). We can determine
+                // this from the redeemScript. If the Output is not spendable, it will be classified
+                // as a P2SH (legacy), since we have no way of knowing otherwise without the redeemScript
+                CScript script;
+                bool is_from_p2sh{false};
+                if (txout.scriptPubKey.IsPayToScriptHash() && solvable) {
+                    CTxDestination destination;
+                    if (!ExtractDestination(txout.scriptPubKey, destination))
+                        continue;
+                    const CScriptID& hash = CScriptID(std::get<ScriptHash>(destination));
+                    if (!provider->GetCScript(hash, script))
+                        continue;
+                    is_from_p2sh = true;
+                } else {
+                    script = txout.scriptPubKey;
+                }
+
+                CWalletUTXO coin(output_id.ToOutPoint(), txout, nDepth, input_bytes, spendable, solvable, safeTx, wtx.GetTxTime(), tx_from_me, feerate);
+
+                // When parsing a scriptPubKey, Solver returns the parsed pubkeys or hashes (depending on the script)
+                // We don't need those here, so we are leaving them in return_values_unused
+                std::vector<std::vector<uint8_t>> return_values_unused;
+                TxoutType type;
+                type = Solver(script, return_values_unused);
+                result.Add(GetOutputType(type, is_from_p2sh), coin);
             }
-
-            CWalletUTXO coin(output.ToOutPoint(), output.GetTxOut(), nDepth, input_bytes, spendable, solvable, safeTx, wtx.GetTxTime(), tx_from_me, feerate);
-
-            // When parsing a scriptPubKey, Solver returns the parsed pubkeys or hashes (depending on the script)
-            // We don't need those here, so we are leaving them in return_values_unused
-            std::vector<std::vector<uint8_t>> return_values_unused;
-            TxoutType type;
-            type = Solver(script, return_values_unused);
-            result.Add(GetOutputType(type, is_from_p2sh), coin);
 
             // Cache total amount as we go
             result.total_amount += value;
@@ -338,27 +352,27 @@ CAmount GetAvailableBalance(const CWallet& wallet, const CCoinControl* coinContr
     ).total_amount;
 }
 
-GenericOutput FindNonChangeParentOutput(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_idx)
+bool FindNonChangeParentOutputDestination(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_id, CTxDestination& dest)
 {
     AssertLockHeld(wallet.cs_wallet);
-    const CTransaction* ptx = wtx.tx.get();
-    GenericOutputID idx = output_idx;
-    while (OutputIsChange(wallet, ptx->GetOutput(idx)) && wtx.GetInputs().size() > 0) {
+    const CWalletTx* ptx = &wtx;
+    GenericOutputID id = output_id;
+    while (OutputIsChange(wallet, *ptx, id) && ptx->GetInputs().size() > 0) {
         GenericInput input = ptx->GetInputs().front();
-        const CWalletTx* wtx = wallet.FindPrevTx(input);
-        if (wtx == nullptr || !wallet.IsMine(wtx->tx->GetOutput(input.GetID()))) {
+        const CWalletTx* prev_wtx = wallet.FindPrevTx(input);
+        if (prev_wtx == nullptr || !wallet.IsMine(input.GetID())) {
             break;
         }
-        ptx = wtx->tx.get();
-        idx = input.GetID();
+        ptx = prev_wtx;
+        id = input.GetID();
     }
-    return ptx->GetOutput(idx);
+    return wallet.ExtractOutputDestination(*ptx, id, dest);
 }
 
-GenericOutput FindNonChangeParentOutput(const CWallet& wallet, const uint256& tx_hash, const GenericOutputID& idx)
+bool FindNonChangeParentOutputDestination(const CWallet& wallet, const uint256& tx_hash, const GenericOutputID& output_id, CTxDestination& dest)
 {
     AssertLockHeld(wallet.cs_wallet);
-    return FindNonChangeParentOutput(wallet, *wallet.GetWalletTx(tx_hash), idx);
+    return FindNonChangeParentOutputDestination(wallet, *wallet.GetWalletTx(tx_hash), output_id, dest);
 }
 
 std::map<CTxDestination, std::vector<GenericWalletUTXO>> ListCoins(const CWallet& wallet)
@@ -368,10 +382,11 @@ std::map<CTxDestination, std::vector<GenericWalletUTXO>> ListCoins(const CWallet
     std::map<CTxDestination, std::vector<GenericWalletUTXO>> result;
 
     for (GenericWalletUTXO& coin : AvailableCoinsListUnspent(wallet).All()) {
-        CTxDestination address;
-        if ((coin.IsSpendable() || (wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) && coin.IsSolvable())) &&
-            wallet.ExtractOutputDestination(FindNonChangeParentOutput(wallet, coin.GetTxHash(), coin.GetID()), address)) {
-            result[address].emplace_back(std::move(coin));
+        if (coin.IsSpendable() || (wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) && coin.IsSolvable())) {
+            CTxDestination address;
+            if (FindNonChangeParentOutputDestination(wallet, coin.GetTxHash(), coin.GetID(), address)) {
+                result[address].emplace_back(std::move(coin));
+            }
         }
     }
 
@@ -384,21 +399,20 @@ std::map<CTxDestination, std::vector<GenericWalletUTXO>> ListCoins(const CWallet
         const CWalletTx* wtx = wallet.FindWalletTx(output_id);
         if (wtx != nullptr) {
             int depth = wallet.GetTxDepthInMainChain(*wtx);
-            GenericOutput output = wtx->GetOutput(output_id);
-            if (depth >= 0 && wallet.IsMine(output) == is_mine_filter) {
+            if (depth >= 0 && wallet.IsMine(output_id) == is_mine_filter) {
                 CTxDestination address;
-                if (wallet.ExtractOutputDestination(FindNonChangeParentOutput(wallet, *wtx, output_id), address)) {
+                if (FindNonChangeParentOutputDestination(wallet, *wtx, output_id, address)) {
                     if (output_id.IsMWEB()) {
                         mw::Coin coin;
                         if (wallet.GetCoin(output_id.ToMWEB(), coin) && coin.IsMine() && coin.HasSpendKey()) {
                             StealthAddress stealth_address;
                             wallet.GetMWWallet()->GetStealthAddress(coin, stealth_address);
-                            result[address].emplace_back(MWWalletUTXO{coin, output.ToMWEBOutput(), depth, stealth_address, CachedTxIsFromMe(wallet, *wtx, ISMINE_ALL), wtx->GetHash()});
+                            result[address].emplace_back(MWWalletUTXO{coin, depth, stealth_address, CachedTxIsFromMe(wallet, *wtx, ISMINE_ALL), wtx->GetHash()});
                         }
                     } else {
-                        const auto out = output.GetTxOut();
+                        const CTxOut& txout = wtx->tx->vout[output_id.ToOutPoint().n];
                         result[address].emplace_back(
-                            CWalletUTXO(output_id.ToOutPoint(), out, depth, CalculateMaximumSignedInputSize(out, &wallet, /*coin_control=*/nullptr), /*spendable=*/true, /*solvable=*/true, /*safe=*/false, wtx->GetTxTime(), CachedTxIsFromMe(wallet, *wtx, ISMINE_ALL)));
+                            CWalletUTXO(output_id.ToOutPoint(), txout, depth, CalculateMaximumSignedInputSize(txout, &wallet, /*coin_control=*/nullptr), /*spendable=*/true, /*solvable=*/true, /*safe=*/false, wtx->GetTxTime(), CachedTxIsFromMe(wallet, *wtx, ISMINE_ALL)));
                     }
                 }
             }

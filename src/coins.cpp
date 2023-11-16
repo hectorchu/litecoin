@@ -29,7 +29,7 @@ bool CCoinsView::HaveCoin(const GenericOutputID& output_id) const
 
 CCoinsViewBacked::CCoinsViewBacked(CCoinsView *viewIn) : base(viewIn) { }
 bool CCoinsViewBacked::GetCoin(const COutPoint &outpoint, Coin &coin) const { return base->GetCoin(outpoint, coin); }
-bool CCoinsViewBacked::HaveCoin(const GenericOutputID& index) const { return base->HaveCoin(index); }
+bool CCoinsViewBacked::HaveCoin(const GenericOutputID& output_id) const { return base->HaveCoin(output_id); }
 uint256 CCoinsViewBacked::GetBestBlock() const { return base->GetBestBlock(); }
 std::vector<uint256> CCoinsViewBacked::GetHeadBlocks() const { return base->GetHeadBlocks(); }
 void CCoinsViewBacked::SetBackend(CCoinsView &viewIn) { base = &viewIn; }

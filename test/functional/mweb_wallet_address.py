@@ -63,7 +63,7 @@ class MWEBWalletAddressTest(BitcoinTestFramework):
         # TODO: self.test_keys_disabled()
 
     def test_prehd_wallet(self):
-        self.nodes[0].generatetoaddress(101, self.nodes[0].getnewaddress())
+        self.generatetoaddress(self.nodes[0], 101, self.nodes[0].getnewaddress(), sync_fun=self.no_op)
 
         node_master = self.nodes[0]
         node_master_wallet_dir = os.path.join(node_master.datadir, "regtest/wallets", self.default_wallet_name)

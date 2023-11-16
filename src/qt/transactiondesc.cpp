@@ -232,7 +232,9 @@ QString TransactionDesc::toHTML_Amounts(interfaces::Wallet& wallet, const interf
         //
         CAmount nUnmatured = 0;
         for (const interfaces::WalletTxOut& wtxout : wtx.outputs) {
-            nUnmatured += wallet.getCredit(wtxout.output, ISMINE_ALL);
+            if ((wtxout.is_mine & ISMINE_ALL) != wallet::isminetype::ISMINE_NO) {
+                nUnmatured += wtxout.nValue;
+            }
         }
         strHTML += "<b>" + tr("Credit") + ":</b> ";
         if (status.is_in_main_chain)
@@ -407,19 +409,6 @@ QString TransactionDesc::toHTML_Debug(interfaces::Node& node, interfaces::Wallet
 
     strHTML += "<br><b>" + tr("Transaction") + ":</b><br>";
     strHTML += GUIUtil::HtmlEscape(wtx.tx->ToString(), true);
-
-    auto get_prev_out = [&](const GenericInput& txin, GenericOutput& prevout) -> bool {
-        if (node.getUnspentOutput(txin.GetID(), prevout)) {
-            return true;
-        }
-
-        if (txin.IsMWEB()) {
-            prevout = GenericOutput{txin.ToMWEB()};
-            return true;
-        }
-
-        return false;
-    };
 
     strHTML += "<br><b>" + tr("Inputs") + ":</b>";
     strHTML += "<ul>";

@@ -405,7 +405,8 @@ public:
     bool IsSpent(const GenericOutputID& idx) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     // Whether this or any known scriptPubKey with the same single key has been spent.
-    bool IsSpentKey(const GenericOutput& output) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool IsSpentKey(const CWalletTx& wtx, const GenericOutputID& output_id) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool IsSpentKey(const CTxDestination& dest) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void SetSpentKeyState(WalletBatch& batch, const GenericOutputID& output_idx, bool used, std::set<CTxDestination>& tx_destinations) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /** Display address on an external signer. Returns false if external signer support is not compiled */
@@ -646,7 +647,7 @@ public:
     CAmount GetDebit(const GenericInput& input, const isminefilter& filter) const;
     isminetype IsMine(const GenericOutput& output) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     bool IsMine(const CTransaction& tx, const std::optional<MWEB::WalletTxInfo>& mweb_wtx_info) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
-    isminetype IsMine(const GenericOutputID& idx) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    isminetype IsMine(const GenericOutputID& output_id) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     /** should probably be renamed to IsRelevantToMe */
     bool IsFromMe(const CTransaction& tx, const std::optional<MWEB::WalletTxInfo>& mweb_wtx_info) const;
     CAmount GetDebit(const CTransaction& tx, const std::optional<MWEB::WalletTxInfo>& mweb_wtx_info, const isminefilter& filter) const;
@@ -899,10 +900,13 @@ public:
     // MWEB: BEGIN
     bool GetCoin(const mw::Hash& output_id, mw::Coin& coin) const;
 
-    CAmount GetValue(const GenericOutputID& output_idx) const;
+    CAmount GetValue(const CWalletTx& wtx, const GenericOutputID& output_id) const;
+    CAmount GetValue(const GenericOutputID& output_id) const;
     CAmount GetValue(const GenericOutput& output) const;
-    bool ExtractOutputDestination(const GenericOutput& output, CTxDestination& dest) const;
-    bool ExtractDestinationScript(const GenericOutput& output, GenericAddress& dest) const;
+
+    std::optional<StealthAddress> ExtractStealthAddress(const mw::Hash& output_id) const;
+    bool ExtractOutputDestination(const CWalletTx& wtx, const GenericOutputID& output_id, CTxDestination& dest) const;
+    bool ExtractOutputAddress(const CWalletTx& wtx, const GenericOutputID& output_id, GenericAddress& dest) const;
 
     const CWalletTx* FindWalletTxByKernelId(const mw::Hash& kernel_id) const;
     const CWalletTx* FindWalletTx(const GenericOutputID& output) const;
