@@ -1110,6 +1110,7 @@ CWalletTx* CWallet::AddToWallet(CTransactionRef tx, const std::optional<MWEB::Wa
 
 bool CWallet::LoadToWallet(const uint256& hash, const UpdateWalletTxFn& fill_wtx)
 {
+    // MW: TODO - Investigate this
     CWalletTx wtx_tmp(nullptr, TxStateInactive{}, std::nullopt);
     if (!fill_wtx(wtx_tmp, true)) {
         return false;
@@ -1126,6 +1127,9 @@ bool CWallet::LoadToWallet(const uint256& hash, const UpdateWalletTxFn& fill_wtx
     assert(ins.second);
 
     CWalletTx& wtx = ins.first->second;
+    wtx.nTimeReceived = wtx_tmp.nTimeReceived;
+    wtx.nTimeSmart = wtx_tmp.nTimeSmart;
+    wtx.nOrderPos = wtx_tmp.nOrderPos;
 
     // If wallet doesn't have a chain (e.g when using litecoin-wallet tool),
     // don't bother to update txn.

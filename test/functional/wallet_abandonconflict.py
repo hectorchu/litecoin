@@ -183,7 +183,7 @@ class AbandonConflictTest(BitcoinTestFramework):
         self.connect_nodes(0, 1)
         self.generate(self.nodes[1], 1)
 
-        tx_list = alice.listsinceblock()["transactions"]
+        tx_list = alice.listtransactions()
 
         conflicted = [tx for tx in tx_list if tx["confirmations"] < 0]
         assert_equal(4, len(conflicted))
