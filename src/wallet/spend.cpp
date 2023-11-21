@@ -466,7 +466,8 @@ std::vector<OutputGroup> GroupOutputs(const CWallet& wallet, const std::vector<G
 
         std::vector<OutputGroup>& groups = dest_to_groups_map[dest];
 
-        if (groups.size() == 0) {
+        // MWEB outputs must be ungrouped.
+        if (groups.size() == 0 || output.IsMWEB()) {
             // No OutputGroups for this scriptPubKey yet, add one
             groups.emplace_back(coin_sel_params);
         }
@@ -496,7 +497,7 @@ std::vector<OutputGroup> GroupOutputs(const CWallet& wallet, const std::vector<G
             const OutputGroup& group = *group_it;
 
             // Don't include partial groups if there are full groups too and we don't want partial groups
-            if (group_it == groups_per_dest.rbegin() && groups_per_dest.size() > 1 && !filter.m_include_partial_groups) {
+            if (group_it == groups_per_dest.rbegin() && groups_per_dest.size() > 1 && !filter.m_include_partial_groups && !group.IsMWEB()) {
                 continue;
             }
 

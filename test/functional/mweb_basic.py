@@ -67,7 +67,8 @@ class MWEBBasicTest(BitcoinTestFramework):
 
         self.log.info("Check for MWEB UTXO on node 0")
         utxos = self.nodes[0].listunspent(addresses=[addr0])
-        assert_equal(len(utxos), 1)
+        assert_equal(len(utxos), 3)
+        utxos.sort(key=lambda x: x['amount'])
         assert utxos[0]['amount'] == 2 and utxos[0]['address'] == addr0
 
         self.log.info("Pegout coins on node 1")

@@ -60,6 +60,10 @@ static constexpr CAmount CHANGE_LOWER{50000};
 //! upper bound for randomly-chosen target change amount
 static constexpr CAmount CHANGE_UPPER{1000000};
 
+// Add some waste for every MWEB input so that we minimize the number of MWEB inputs consumed.
+// MW: TODO - check if this is the right value
+static constexpr CAmount MWEB_INPUT_WASTE{1};
+
 enum class TxSizeType {
     BYTES,
     VBYTES,
@@ -189,6 +193,12 @@ struct OutputGroup
     bool IsMWEB() const noexcept
     {
         return !m_outputs.empty() && m_outputs.front().IsMWEB();
+    }
+
+    CAmount GetWaste() const noexcept
+    {
+        if (IsMWEB()) return MWEB_INPUT_WASTE * m_outputs.size();
+        return fee - long_term_fee;
     }
 };
 

@@ -123,7 +123,7 @@ std::optional<SelectionResult> SelectCoinsBnB(std::vector<OutputGroup>& utxo_poo
             assert(utxo_pool_index == curr_selection.back());
             OutputGroup& utxo = utxo_pool.at(utxo_pool_index);
             curr_value -= utxo.GetSelectionAmount();
-            curr_waste -= utxo.fee - utxo.long_term_fee;
+            curr_waste -= utxo.GetWaste();
             curr_selection.pop_back();
         } else { // Moving forwards, continuing down this branch
             OutputGroup& utxo = utxo_pool.at(utxo_pool_index);
@@ -142,7 +142,7 @@ std::optional<SelectionResult> SelectCoinsBnB(std::vector<OutputGroup>& utxo_poo
                 // Inclusion branch first (Largest First Exploration)
                 curr_selection.push_back(utxo_pool_index);
                 curr_value += utxo.GetSelectionAmount();
-                curr_waste += utxo.fee - utxo.long_term_fee;
+                curr_waste += utxo.GetWaste();
             }
         }
     }
@@ -385,6 +385,7 @@ CAmount GetSelectionWaste(const std::set<GenericWalletUTXO>& inputs, CAmount cha
     CAmount waste = 0;
     CAmount selected_effective_value = 0;
     for (const GenericWalletUTXO& coin : inputs) {
+        if (coin.IsMWEB()) waste += MWEB_INPUT_WASTE; // Prefer to spend fewer MWEB inputs
         waste += coin.GetFee() - coin.GetLongTermFee();
         selected_effective_value += use_effective_value ? coin.GetEffectiveValue() : coin.GetValue();
     }
