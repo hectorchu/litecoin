@@ -361,7 +361,11 @@ BOOST_FIXTURE_TEST_CASE(coin_mark_dirty_immature_credit, TestChain100Setup)
 
     LOCK(wallet.cs_wallet);
     LOCK(Assert(m_node.chainman)->GetMutex());
-    CWalletTx wtx{m_coinbase_txns.back(), TxStateConfirmed{m_node.chainman->ActiveChain().Tip()->GetBlockHash(), m_node.chainman->ActiveChain().Height(), /*index=*/0}, std::nullopt};
+
+    auto& tx = m_coinbase_txns.back();
+    auto [it, _] = wallet.mapWallet.try_emplace(tx->GetHash(), tx, TxStateConfirmed{m_node.chainman->ActiveChain().Tip()->GetBlockHash(), m_node.chainman->ActiveChain().Height(), /*index=*/0}, std::nullopt);
+    auto& wtx = it->second;
+
     wallet.SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
     wallet.SetupDescriptorScriptPubKeyMans();
 
