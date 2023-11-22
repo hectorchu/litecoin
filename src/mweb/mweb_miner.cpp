@@ -22,6 +22,8 @@ void Miner::NewBlock(const ChainstateManager& chainman, const uint64_t nHeight)
 
 bool Miner::AddMWEBTransaction(CTxMemPool::txiter iter)
 {
+    if (!mweb_builder) return false; // MWEB not active
+
     CTransactionRef pTx = iter->GetSharedTx();
 
     //
