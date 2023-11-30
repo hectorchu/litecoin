@@ -478,7 +478,7 @@ std::optional<util::Error> TxBuilder::SignMWEBTx()
 {
     m_wallet.WalletLogPrintf("TxBuilder::SignMWEBTx() - BEGIN\n");
     if (GetTxType() == TxType::LTC_TO_LTC) {
-        m_wallet.WalletLogPrintf("TxBuilder::SignMWEBTx() - Not an MWEB Tx. Nothing to sign.");
+        m_wallet.WalletLogPrintf("TxBuilder::SignMWEBTx() - Not an MWEB Tx. Nothing to sign\n");
         return std::nullopt;
     }
 
@@ -607,10 +607,10 @@ CAmount TxBuilder::GetFeePaid() const
         m_tx.vout.cbegin(), m_tx.vout.cend(), CAmount{0},
         [](CAmount sum, const CTxOut& txout) { return sum += txout.nValue; }
     );
-    assert(ltc_input_sum >= ltc_output_sum);
     const CAmount ltc_fee = ltc_input_sum - ltc_output_sum;
     m_wallet.WalletLogPrintf("TxBuilder::GetFeePaid() - ltc_input_sum: %s, ltc_output_sum: %s, ltc_fee: %lld\n", FormatMoney(ltc_input_sum), FormatMoney(ltc_output_sum), ltc_fee);
-    
+    assert(ltc_input_sum >= ltc_output_sum);
+
     const CAmount mweb_input_sum = std::accumulate(
         m_selected_coins.cbegin(), m_selected_coins.cend(), CAmount{0},
         [](CAmount sum, const GenericWalletUTXO& coin) { return coin.IsMWEB() ? (sum + coin.GetValue()) : sum; }
@@ -626,8 +626,8 @@ CAmount TxBuilder::GetFeePaid() const
         [](CAmount sum, const mw::PegOutRecipient& recipient) { return sum += recipient.nAmount; }
     );
     m_wallet.WalletLogPrintf("TxBuilder::GetFeePaid() - mweb_input_sum: %s, mweb_pegin: %s, mweb_output_sum: %s, mweb_pegout_sum: %s\n", FormatMoney(mweb_input_sum), FormatMoney(mweb_pegin), FormatMoney(mweb_output_sum), FormatMoney(mweb_pegout_sum));
-    assert((mweb_input_sum + mweb_pegin) >= (mweb_output_sum + mweb_pegout_sum));
     const CAmount mweb_fee = (mweb_input_sum + mweb_pegin) - (mweb_output_sum + mweb_pegout_sum);
+    // if mweb_fee is negative then this reduces the current fee paid so that later we will reduce output values by an additional |mweb_fee|. This happens for peg-ins when m_subtract_fee_outputs is true.
 
     return ltc_fee + mweb_fee;
 }

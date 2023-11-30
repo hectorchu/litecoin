@@ -582,6 +582,10 @@ std::optional<SelectionResult> SelectCoins(const CWallet& wallet, CoinsResult& a
     coin_control.ListSelected(vPresetInputs);
     for (const GenericOutputID& output_id : vPresetInputs) {
         if (output_id.IsMWEB()) {
+            if (coin_selection_params.m_tx_type == TxType::LTC_TO_LTC) {
+                return std::nullopt;
+            }
+
             mw::Coin mweb_coin;
             if (!wallet.GetCoin(output_id.ToMWEB(), mweb_coin) || !mweb_coin.IsMine()) {
                 return std::nullopt;
@@ -598,7 +602,12 @@ std::optional<SelectionResult> SelectCoins(const CWallet& wallet, CoinsResult& a
             preset_inputs.Insert(*coin, /*ancestors=*/ 0, /*descendants=*/ 0, /*positive_only=*/ false);
             continue;
         }
-        
+
+        if (coin_selection_params.m_tx_type == TxType::MWEB_TO_MWEB ||
+            coin_selection_params.m_tx_type == TxType::PEGOUT) {
+            return std::nullopt;
+        }
+
         const COutPoint& outpoint = output_id.ToOutPoint();
         int input_bytes = -1;
         CTxOut txout;

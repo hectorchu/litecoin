@@ -298,9 +298,9 @@ CBlock TestChain100Setup::CreateBlock(
     const CScript& scriptPubKey,
     Chainstate& chainstate)
 {
-    CBlock block = BlockAssembler{chainstate, nullptr}.CreateNewBlock(scriptPubKey)->block;
+    CBlock block = BlockAssembler{chainstate, m_build_block_with_mempool ? chainstate.GetMempool() : nullptr}.CreateNewBlock(scriptPubKey)->block;
 
-    Assert(block.vtx.size() == 1);
+    if (!m_build_block_with_mempool) Assert(block.vtx.size() == 1);
     for (const CMutableTransaction& tx : txns) {
         block.vtx.push_back(MakeTransactionRef(tx));
     }
