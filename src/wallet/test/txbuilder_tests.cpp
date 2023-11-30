@@ -126,7 +126,7 @@ public:
         return *std::min_element(coins.begin(), coins.end(), [](const GenericWalletUTXO& a, const GenericWalletUTXO& b) { return a.GetValue() < b.GetValue(); });
     }
 
-    void RunTest(bool fSubtractFeeFromAmount)
+    void SingleRecipientTest(bool fSubtractFeeFromAmount)
     {
         auto voutfn = [](const CTxOut& utxo) { return utxo.nValue; };
         auto mwoutfn = [](const mw::MutableOutput& utxo) { return *utxo.amount; };
@@ -136,9 +136,11 @@ public:
         {   // Pegin & Activate MWEB
             auto [wtx, mtx] = AddTx({{{NewDestination(OutputType::MWEB)}, 5 * COIN, fSubtractFeeFromAmount}});
             ExpectInputs(*wtx, 1, 0);
-            ExpectOutputs(*wtx, 1, 2); // Single LTC pegin output (all pegged-in), MWEB pegin output and MWEB change output
+            ExpectOutputs(*wtx, 1, 2); // Single LTC pegin output (all pegged-in), MWEB recipient output and MWEB change output
             ExpectAmounts(mtx.vout, voutfn, {125 * COIN/10});
-            ExpectAmounts(mtx.mweb_tx.GetPegIns(), peginfn, {125 * COIN/10});
+            auto pegins = mtx.mweb_tx.GetPegIns();
+            ExpectAmounts(pegins, peginfn, {125 * COIN/10});
+            BOOST_CHECK(mtx.vout[0].scriptPubKey == GetScriptForPegin(pegins[0].GetKernelID()));
             ExpectAmounts(mtx.mweb_tx.outputs, mwoutfn, {5 * COIN, 75 * COIN/10});
             ExpectCoins({}, {5 * COIN, 75 * COIN/10});
         }
@@ -161,11 +163,14 @@ public:
 
         {   // Pegout
             LOCK(m_wallet.cs_wallet);
-            auto [wtx, mtx] = AddTx({{{NewDestination(OutputType::BECH32)}, 1 * COIN, fSubtractFeeFromAmount}}, {SmallestCoin(AvailableCoins(m_wallet).coins[OutputType::MWEB])});
+            auto dest = NewDestination(OutputType::BECH32);
+            auto [wtx, mtx] = AddTx({{{dest}, 1 * COIN, fSubtractFeeFromAmount}}, {SmallestCoin(AvailableCoins(m_wallet).coins[OutputType::MWEB])});
             ExpectInputs(*wtx, 0, 1);
             ExpectOutputs(*wtx, 0, 1);
             ExpectAmounts(mtx.mweb_tx.outputs, mwoutfn, {1 * COIN});
-            ExpectAmounts(mtx.mweb_tx.GetPegOutCoins(), pegoutfn, {1 * COIN});
+            auto pegouts = mtx.mweb_tx.GetPegOutCoins();
+            ExpectAmounts(pegouts, pegoutfn, {1 * COIN});
+            BOOST_CHECK(GenericAddress(pegouts[0].GetScriptPubKey()) == dest);
             mineBlocks(PEGOUT_MATURITY);
             ExpectCoins({1 * COIN, 2 * COIN, 105 * COIN/10}, {1 * COIN, 3 * COIN, 75 * COIN/10});
         }
@@ -173,29 +178,90 @@ public:
         {   // Pegin & Pegout
             LOCK(m_wallet.cs_wallet);
             auto coins = AvailableCoins(m_wallet).coins;
-            auto [wtx, mtx] = AddTx({{{NewDestination(OutputType::BECH32)}, 5 * COIN/10, fSubtractFeeFromAmount}}, {SmallestCoin(coins[OutputType::BECH32]), SmallestCoin(coins[OutputType::MWEB])});
+            auto dest = NewDestination(OutputType::BECH32);
+            auto [wtx, mtx] = AddTx({{{dest}, 5 * COIN/10, fSubtractFeeFromAmount}}, {SmallestCoin(coins[OutputType::BECH32]), SmallestCoin(coins[OutputType::MWEB])});
             ExpectInputs(*wtx, 1, 1);
             ExpectOutputs(*wtx, 1, 1); // LTC pegin output and MWEB change output
             ExpectAmounts(mtx.vout, voutfn, {1 * COIN});
-            ExpectAmounts(mtx.mweb_tx.GetPegIns(), peginfn, {1 * COIN});
+            auto pegins = mtx.mweb_tx.GetPegIns();
+            ExpectAmounts(pegins, peginfn, {1 * COIN});
+            BOOST_CHECK(mtx.vout[0].scriptPubKey == GetScriptForPegin(pegins[0].GetKernelID()));
             ExpectAmounts(mtx.mweb_tx.outputs, mwoutfn, {15 * COIN/10});
-            ExpectAmounts(mtx.mweb_tx.GetPegOutCoins(), pegoutfn, {5 * COIN/10});
+            auto pegouts = mtx.mweb_tx.GetPegOutCoins();
+            ExpectAmounts(pegouts, pegoutfn, {5 * COIN/10});
+            BOOST_CHECK(GenericAddress(pegouts[0].GetScriptPubKey()) == dest);
             mineBlocks(PEGOUT_MATURITY);
             ExpectCoins({5 * COIN/10, 2 * COIN, 105 * COIN/10}, {15 * COIN/10, 3 * COIN, 75 * COIN/10});
         }
+    }
+
+    void MultipleRecipientsTest(bool fSubtractFeeFromAmount)
+    {
+        auto voutfn = [](const CTxOut& utxo) { return utxo.nValue; };
+        auto mwoutfn = [](const mw::MutableOutput& utxo) { return *utxo.amount; };
+        auto peginfn = [](const PegInCoin& pegin) { return pegin.GetAmount(); };
+
+        {   // Pegin & Activate MWEB
+            auto [wtx, mtx] = AddTx({
+                {{NewDestination(OutputType::MWEB)}, 2 * COIN, fSubtractFeeFromAmount},
+                {{NewDestination(OutputType::MWEB)}, 3 * COIN, fSubtractFeeFromAmount},
+            });
+            ExpectInputs(*wtx, 1, 0);
+            ExpectOutputs(*wtx, 1, 3); // Single LTC pegin output (all pegged-in), MWEB recipient outputs and MWEB change output
+            ExpectAmounts(mtx.vout, voutfn, {125 * COIN/10});
+            auto pegins = mtx.mweb_tx.GetPegIns();
+            ExpectAmounts(pegins, peginfn, {125 * COIN/10});
+            BOOST_CHECK(mtx.vout[0].scriptPubKey == GetScriptForPegin(pegins[0].GetKernelID()));
+            ExpectAmounts(mtx.mweb_tx.outputs, mwoutfn, {2 * COIN, 3 * COIN, 75 * COIN/10});
+            ExpectCoins({}, {2 * COIN, 3 * COIN, 75 * COIN/10});
+        }
+
+        {   // LTC to LTC
+            auto [wtx, mtx] = AddTx({
+                {{NewDestination(OutputType::BECH32)}, 2 * COIN, fSubtractFeeFromAmount},
+                {{NewDestination(OutputType::BECH32)}, 3 * COIN, fSubtractFeeFromAmount},
+            });
+            ExpectInputs(*wtx, 1, 0);
+            ExpectOutputs(*wtx, 3, 0);
+            ExpectAmounts(mtx.vout, voutfn, {2 * COIN, 3 * COIN, 75 * COIN/10});
+            ExpectCoins({2 * COIN, 3 * COIN, 75 * COIN/10}, {2 * COIN, 3 * COIN, 75 * COIN/10});
+        }
+
+        {   // MWEB to MWEB
+            auto [wtx, mtx] = AddTx({
+                {{NewDestination(OutputType::MWEB)}, 2 * COIN, fSubtractFeeFromAmount},
+                {{NewDestination(OutputType::MWEB)}, 3 * COIN, fSubtractFeeFromAmount},
+            });
+            ExpectInputs(*wtx, 0, 1);
+            ExpectOutputs(*wtx, 0, 3);
+            ExpectAmounts(mtx.mweb_tx.outputs, mwoutfn, {2 * COIN, 3 * COIN, 25 * COIN/10});
+            ExpectCoins({2 * COIN, 3 * COIN, 75 * COIN/10}, {2 * COIN, 2 * COIN, 3 * COIN, 3 * COIN, 25 * COIN/10});
+        }
+
+        // Pegout to multiple recipients currently disallowed
     }
 };
 
 BOOST_FIXTURE_TEST_SUITE(txbuilder_tests, TxBuilderTestingSetup)
 
-BOOST_AUTO_TEST_CASE(AddFeeToInputsTest)
+BOOST_AUTO_TEST_CASE(SingleRecipientNoSubtractFeeFromOutputsTest)
 {
-    RunTest(false);
+    SingleRecipientTest(false);
 }
 
-BOOST_AUTO_TEST_CASE(SubtractFeeFromOutputsTest)
+BOOST_AUTO_TEST_CASE(SingleRecipientSubtractFeeFromOutputsTest)
 {
-    RunTest(true);
+    SingleRecipientTest(true);
+}
+
+BOOST_AUTO_TEST_CASE(MultipleRecipientsNoSubtractFeeFromOutputsTest)
+{
+    MultipleRecipientsTest(false);
+}
+
+BOOST_AUTO_TEST_CASE(MultipleRecipientsSubtractFeeFromOutputsTest)
+{
+    MultipleRecipientsTest(true);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
