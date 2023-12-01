@@ -55,7 +55,7 @@ struct ChangeBuilder
 
     ChangeParams BuildMWEBParams(const CoinSelectionParams& coin_selection_params) const;
     ChangeParams BuildLTCParams(const CWallet& wallet, const CoinSelectionParams& coin_selection_params, const CRecipients& recipients) const;
-    ChangeParams BuildParams(const CWallet& wallet, const CCoinControl& coin_control, const CoinSelectionParams& coin_selection_params, const CRecipients& recipients) const;
+    std::optional<ChangeParams> BuildParams(const CWallet& wallet, const CCoinControl& coin_control, const CoinSelectionParams& coin_selection_params, const CRecipients& recipients) const;
 
     static bool ChangeBelongsOnMWEB(const TxType& tx_type, const CTxDestination& dest_change);
 

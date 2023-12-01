@@ -162,7 +162,11 @@ util::Result<SelectionResult> TxBuilder::SelectInputCoins(const CoinsResult& ava
 {
     auto select_by_type = [&](const TxType& tx_type) -> std::optional<SelectionResult> {
         m_selection_params.m_tx_type = tx_type;
-        m_selection_params.m_change_params = m_change.BuildParams(m_wallet, m_coin_control, m_selection_params, m_recipients);
+
+        auto change_params = m_change.BuildParams(m_wallet, m_coin_control, m_selection_params, m_recipients);
+        if (!change_params) return {};
+        m_selection_params.m_change_params = *change_params;
+
         const CAmount nTarget = CalcSelectionTarget(tx_type);
         CoinsResult available_coins_mut = available_coins;
 

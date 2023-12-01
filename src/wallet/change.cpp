@@ -90,11 +90,16 @@ ChangeParams ChangeBuilder::BuildLTCParams(const CWallet& wallet, const CoinSele
     return change_params;
 }
 
-ChangeParams ChangeBuilder::BuildParams(const CWallet& wallet, const CCoinControl& coin_control, const CoinSelectionParams& coin_selection_params, const CRecipients& recipients) const
+std::optional<ChangeParams> ChangeBuilder::BuildParams(const CWallet& wallet, const CCoinControl& coin_control, const CoinSelectionParams& coin_selection_params, const CRecipients& recipients) const
 {
+    bool change_is_set = !std::holds_alternative<CNoDestination>(coin_control.destChange);
+    bool change_is_mweb = std::holds_alternative<StealthAddress>(coin_control.destChange);
+
     if (ChangeBuilder::ChangeBelongsOnMWEB(coin_selection_params.m_tx_type, coin_control.destChange)) {
+        if (change_is_set && !change_is_mweb) return {};
         return BuildMWEBParams(coin_selection_params);
     } else {
+        if (change_is_set && change_is_mweb) return {};
         return BuildLTCParams(wallet, coin_selection_params, recipients);
     }
 }
