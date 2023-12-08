@@ -2234,7 +2234,7 @@ void LegacyScriptPubKeyMan::LoadMWEBKeychain()
     if (!GetKey(m_hd_chain.seed_id, seed)) {
         if (m_hd_chain.mweb_scan_key) {
             m_mwebKeychain = std::make_shared<mw::Keychain>(
-                *this,
+                this,
                 *m_hd_chain.mweb_scan_key,
                 SecretKey::Null()
             );
@@ -2262,7 +2262,7 @@ void LegacyScriptPubKeyMan::LoadMWEBKeychain()
 
     m_hd_chain.nVersion = std::max(m_hd_chain.nVersion, CHDChain::VERSION_HD_MWEB_WATCH);
     m_mwebKeychain = std::make_shared<mw::Keychain>(
-        *this,
+        this,
         SecretKey(scanKey.key.begin()),
         SecretKey(spendKey.key.begin())
     );
@@ -2595,7 +2595,8 @@ bool DescriptorScriptPubKeyMan::SetupDescriptorGeneration(const CExtKey& master_
         break;
     }
     case OutputType::MWEB: {
-        desc_prefix = "mweb(" + xpub + "/100'"; // MW: TODO - Figure out actual descriptor string
+        if (internal) return false;
+        desc_prefix = "mweb(" + xpub + "/1000'";
         break;
     }
     case OutputType::UNKNOWN: {
@@ -2606,14 +2607,15 @@ bool DescriptorScriptPubKeyMan::SetupDescriptorGeneration(const CExtKey& master_
     } // no default case, so the compiler can warn about missing cases
     assert(!desc_prefix.empty());
 
-    // Mainnet derives at 0', testnet and regtest derive at 1'
+    // Mainnet derives at 2', testnet and regtest derive at 1'
     if (Params().IsTestChain()) {
         desc_prefix += "/1'";
     } else {
-        desc_prefix += "/0'";
+        desc_prefix += "/2'";
     }
 
     std::string internal_path = internal ? "/1" : "/0";
+    if (addr_type == OutputType::MWEB) internal_path = "";
     std::string desc_str = desc_prefix + "/0'" + internal_path + desc_suffix;
 
     // Make the descriptor
@@ -2665,6 +2667,16 @@ bool DescriptorScriptPubKeyMan::HavePrivateKeys() const
     return m_map_keys.size() > 0 || m_map_crypted_keys.size() > 0;
 }
 
+bool DescriptorScriptPubKeyMan::GetKey(const CKeyID& address, CKey& keyOut) const
+{
+    LOCK(cs_desc_man);
+    auto keys = GetKeys();
+    auto it = keys.find(address);
+    if (it == keys.end()) return false;
+    keyOut = it->second;
+    return true;
+}
+
 std::optional<int64_t> DescriptorScriptPubKeyMan::GetOldestKeyPoolTime() const
 {
     // This is only used for getwalletinfo output and isn't relevant to descriptor wallets.
@@ -2684,7 +2696,7 @@ int64_t DescriptorScriptPubKeyMan::GetTimeFirstKey() const
     return m_wallet_descriptor.creation_time;
 }
 
-std::unique_ptr<FlatSigningProvider> DescriptorScriptPubKeyMan::GetSigningProvider(const CScript& script, bool include_private) const
+std::unique_ptr<FlatSigningProvider> DescriptorScriptPubKeyMan::GetSigningProvider(const GenericAddress& script, bool include_private) const
 {
     LOCK(cs_desc_man);
 
@@ -2743,11 +2755,7 @@ std::unique_ptr<FlatSigningProvider> DescriptorScriptPubKeyMan::GetSigningProvid
 
 std::unique_ptr<SigningProvider> DescriptorScriptPubKeyMan::GetSolvingProvider(const GenericAddress& dest_addr) const
 {
-    if (dest_addr.IsMWEB()) {
-        return nullptr;
-    }
-
-    return GetSigningProvider(dest_addr.GetScript(), false);
+    return GetSigningProvider(dest_addr, false);
 }
 
 bool DescriptorScriptPubKeyMan::CanProvide(const GenericAddress& dest_addr, SignatureData& sigdata)
@@ -2896,7 +2904,7 @@ TransactionError DescriptorScriptPubKeyMan::FillPSBT(PartiallySignedTransaction&
 
 std::unique_ptr<CKeyMetadata> DescriptorScriptPubKeyMan::GetMetadata(const CTxDestination& dest) const
 {
-    std::unique_ptr<SigningProvider> provider = GetSigningProvider(GetScriptForDestination(dest));
+    std::unique_ptr<SigningProvider> provider = GetSigningProvider(dest);
     if (provider) {
         KeyOriginInfo orig;
         CKeyID key_id = GetKeyForDestination(*provider, dest);
@@ -3079,5 +3087,29 @@ bool DescriptorScriptPubKeyMan::CanUpdateToWalletDescriptor(const WalletDescript
     }
 
     return true;
+}
+
+void DescriptorScriptPubKeyMan::LoadMWEBKeychain()
+{
+    if (m_storage.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) || m_storage.IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
+        return;
+    }
+
+    m_storage.SetMinVersion(FEATURE_MWEB);
+
+    LOCK(cs_desc_man);
+    FlatSigningProvider provider, out_keys;
+    provider.keys = GetKeys();
+    m_wallet_descriptor.descriptor->ExpandPrivate(-1, provider, out_keys);
+    CKey scan_key = out_keys.keys.begin()->second;
+    out_keys.keys.clear();
+    m_wallet_descriptor.descriptor->ExpandPrivate(-2, provider, out_keys);
+    CKey spend_key = out_keys.keys.begin()->second;
+
+    m_mwebKeychain = std::make_shared<mw::Keychain>(
+        this,
+        SecretKey(scan_key.begin()),
+        SecretKey(spend_key.begin())
+    );
 }
 } // namespace wallet

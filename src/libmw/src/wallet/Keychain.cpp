@@ -9,6 +9,9 @@ MW_NAMESPACE
 
 bool Keychain::RewindOutput(const mw::Output& output, mw::Coin& coin) const
 {
+    if (!m_spk_man) {
+        return false;
+    }
     if (!output.HasStandardFields()) {
         return false;
     }
@@ -25,7 +28,7 @@ bool Keychain::RewindOutput(const mw::Output& output, mw::Coin& coin) const
 
     // Check if B_i belongs to wallet
     StealthAddress address(B_i.Mul(m_scanSecret), B_i);
-    auto pMetadata = m_spk_man.GetMetadata(address);
+    auto pMetadata = m_spk_man->GetMetadata(address);
     if (!pMetadata) {
         return false;
     }
@@ -65,6 +68,10 @@ bool Keychain::RewindOutput(const mw::Output& output, mw::Coin& coin) const
 
 std::optional<SecretKey> Keychain::CalculateOutputKey(const mw::Coin& coin) const
 {
+    if (!m_spk_man) {
+        return std::nullopt;
+    }
+
     // If we already calculated the spend key, there's no need to calculate it again.
     if (coin.HasSpendKey()) {
         return coin.spend_key;
@@ -89,7 +96,7 @@ std::optional<SecretKey> Keychain::CalculateOutputKey(const mw::Coin& coin) cons
         }
 
         CKey key;
-        if (!m_spk_man.GetKey(coin.address->B().GetID(), key)) {
+        if (!m_spk_man->GetKey(coin.address->B().GetID(), key)) {
             return std::nullopt;
         }
 

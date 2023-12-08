@@ -238,6 +238,8 @@ public:
 
     virtual bool HavePrivateKeys() const { return false; }
 
+    virtual bool GetKey(const CKeyID& address, CKey& keyOut) const { return false; }
+
     //! The action to do when the DB needs rewrite
     virtual void RewriteDB() {}
 
@@ -604,7 +606,7 @@ private:
     // Cached FlatSigningProviders to avoid regenerating them each time they are needed.
     mutable std::map<int32_t, FlatSigningProvider> m_map_signing_providers;
     // Fetch the SigningProvider for the given script and optionally include private keys
-    std::unique_ptr<FlatSigningProvider> GetSigningProvider(const CScript& script, bool include_private = false) const;
+    std::unique_ptr<FlatSigningProvider> GetSigningProvider(const GenericAddress& script, bool include_private = false) const;
     // Fetch the SigningProvider for the given pubkey and always include private keys. This should only be called by signing code.
     std::unique_ptr<FlatSigningProvider> GetSigningProvider(const CPubKey& pubkey) const;
     // Fetch the SigningProvider for a given index and optionally include private keys. Called by the above functions.
@@ -653,6 +655,8 @@ public:
 
     bool HavePrivateKeys() const override;
 
+    bool GetKey(const CKeyID& address, CKey& keyOut) const override;
+
     std::optional<int64_t> GetOldestKeyPoolTime() const override;
     unsigned int GetKeyPoolSize() const override;
 
@@ -689,6 +693,8 @@ public:
     bool GetDescriptorString(std::string& out, const bool priv) const;
 
     void UpgradeDescriptorCache();
+
+    void LoadMWEBKeychain() override;
 };
 } // namespace wallet
 

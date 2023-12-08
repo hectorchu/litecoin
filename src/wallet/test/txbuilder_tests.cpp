@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or https://www.opensource.org/licenses/mit-license.php.
 
+#include <key_io.h>
 #include <validation.h>
 #include <wallet/txbuilder.h>
 #include <test/util/setup_common.h>
@@ -19,9 +20,14 @@ public:
     {
         m_wallet.LoadWallet();
         m_wallet.LoadMinVersion(FEATURE_MWEB);
-        m_wallet.SetupLegacyScriptPubKeyMan();
-        m_wallet.GetLegacyScriptPubKeyMan()->AddKey(coinbaseKey);
-        m_wallet.GetLegacyScriptPubKeyMan()->SetupGeneration();
+        m_wallet.SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+        m_wallet.SetupDescriptorScriptPubKeyMans();
+
+        FlatSigningProvider provider;
+        std::string error;
+        WalletDescriptor desc(Parse("combo(" + EncodeSecret(coinbaseKey) + ")", provider, error, false), 0, 0, 1, 1);
+        m_wallet.AddWalletDescriptor(desc, provider, "", false);
+
         m_wallet.SetBroadcastTransactions(true);
         SetMockTime(1601450001);
         mineBlocks(331); // Pre-MWEB activation blocks

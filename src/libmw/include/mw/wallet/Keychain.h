@@ -7,7 +7,7 @@
 #include <memory>
 
 // Forward Declarations
-namespace wallet { class LegacyScriptPubKeyMan; }
+namespace wallet { class ScriptPubKeyMan; }
 
 MW_NAMESPACE
 
@@ -16,7 +16,7 @@ class Keychain
 public:
     using Ptr = std::shared_ptr<Keychain>;
 
-    Keychain(const wallet::LegacyScriptPubKeyMan& spk_man, SecretKey scan_secret, SecretKey spend_secret)
+    Keychain(const wallet::ScriptPubKeyMan* spk_man, SecretKey scan_secret, SecretKey spend_secret)
         : m_spk_man(spk_man),
         m_scanSecret(std::move(scan_secret)),
         m_spendSecret(std::move(spend_secret)) { }
@@ -53,7 +53,7 @@ public:
     void Unlock(const SecretKey& spend_secret) { m_spendSecret = spend_secret; }
     
 private:
-    const wallet::LegacyScriptPubKeyMan& m_spk_man;
+    const wallet::ScriptPubKeyMan* m_spk_man;
     SecretKey m_scanSecret;
     SecretKey m_spendSecret;
 };

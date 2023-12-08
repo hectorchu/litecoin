@@ -635,7 +635,7 @@ std::string AddChecksum(const std::string& str) { return str + "#" + DescriptorC
 class DescriptorImpl : public Descriptor
 {
 protected:
-    //! Public key arguments for this descriptor (size 1 for PK, PKH, WPKH; any size for WSH and Multisig).
+    //! Public key arguments for this descriptor (size 1 for PK, PKH, WPKH, MWEB; any size for WSH and Multisig).
     const std::vector<std::unique_ptr<PubkeyProvider>> m_pubkey_args;
     //! The string name of the descriptor function.
     const std::string m_name;
@@ -901,22 +901,31 @@ public:
     bool IsSingleType() const final { return true; }
 };
 
-/** A parsed mweb descriptor. */
+/** A parsed mweb(P) descriptor. */
 class MWEBDescriptor final : public DescriptorImpl
 {
-    SecretKey m_scanSecret;
-
 protected:
-    std::vector<GenericAddress> MakeScripts(const std::vector<CPubKey>& keys, Span<const CScript>, FlatSigningProvider& out) const override
+    std::vector<GenericAddress> MakeScripts(const std::vector<CPubKey>& keys, Span<const CScript>, FlatSigningProvider&) const override
     {
-        PublicKey B(keys[0].data());
-        PublicKey A = B.Mul(m_scanSecret);
-        return Vector(GenericAddress(StealthAddress(A, B)));
+        const PubkeyProvider& provider = *m_pubkey_args[0];
+        PublicKey B = keys[0].begin();
+        CKey scan_key;
+        if (provider.GetPrivKey(-1, DUMMY_SIGNING_PROVIDER, scan_key)) {
+            PublicKey A = B.Mul(scan_key.begin());
+            return Vector(GenericAddress(StealthAddress(A, B)));
+        }
+        CPubKey scan_pubkey;
+        KeyOriginInfo info;
+        if (provider.GetPubKey(-1, DUMMY_SIGNING_PROVIDER, scan_pubkey, info)) {
+            PublicKey A = scan_pubkey.begin();
+            return Vector(GenericAddress(StealthAddress(A, B)));
+        }
+        return {};
     }
 
 public:
-    MWEBDescriptor(std::unique_ptr<PubkeyProvider> prov, SecretKey scan_secret)
-        : DescriptorImpl(Vector(std::move(prov)), "mweb"), m_scanSecret(std::move(scan_secret)) {}
+    MWEBDescriptor(std::unique_ptr<PubkeyProvider> prov)
+        : DescriptorImpl(Vector(std::move(prov)), "mweb") {}
 
     std::optional<OutputType> GetOutputType() const final { return OutputType::MWEB; }
     bool IsSingleType() const final { return true; }
@@ -1349,17 +1358,9 @@ std::unique_ptr<PubkeyProvider> InferXOnlyPubkey(const XOnlyPubKey& xkey, ParseS
 std::unique_ptr<PubkeyProvider> InferMWEBPubkey(const StealthAddress& mweb_address, const SigningProvider& provider)
 {
     CPubKey pubkey(mweb_address.GetSpendPubKey().vec());
-    return InferPubkey(pubkey, ParseScriptContext::TOP, provider);
-
-    // MW: TODO - Should we create an MWEBPubkeyProvider here?
-    //std::unique_ptr<PubkeyProvider> key_provider = std::make_unique<MWEBPubkeyProvider>(0, pubkey, ParseScriptContext::TOP, provider);
-
-    //KeyOriginInfo info;
-    //if (provider.GetKeyOrigin(pubkey.GetID(), info)) {
-    //    return std::make_unique<OriginPubkeyProvider>(0, std::move(info), std::move(key_provider));
-    //}
-
-    //return key_provider;
+    CPubKey scan_pubkey(mweb_address.GetScanPubKey().vec());
+    std::unique_ptr<PubkeyProvider> key_provider = InferPubkey(pubkey, ParseScriptContext::TOP, provider);
+    return std::make_unique<MWEBPubkeyProvider>(0, std::move(key_provider), scan_pubkey, std::nullopt);
 }
 
 /**
@@ -1543,6 +1544,19 @@ std::unique_ptr<DescriptorImpl> ParseScript(uint32_t& key_exp_index, Span<const 
         return std::make_unique<WPKHDescriptor>(std::move(pubkey));
     } else if (Func("wpkh", expr)) {
         error = "Can only have wpkh() at top level or inside sh()";
+        return nullptr;
+    }
+    if (ctx == ParseScriptContext::TOP && Func("mweb", expr)) {
+        auto pubkey = ParsePubkey(key_exp_index, expr, ctx, out, error);
+        if (!pubkey) {
+            error = strprintf("mweb(): %s", error);
+            return nullptr;
+        }
+        pubkey = std::make_unique<MWEBPubkeyProvider>(key_exp_index, std::move(pubkey), std::nullopt, std::nullopt);
+        key_exp_index++;
+        return std::make_unique<MWEBDescriptor>(std::move(pubkey));
+    } else if (Func("mweb", expr)) {
+        error = "Can only have mweb() at top level";
         return nullptr;
     }
     if (ctx == ParseScriptContext::TOP && Func("sh", expr)) {
@@ -1911,7 +1925,7 @@ std::string GetDescriptorChecksum(const std::string& descriptor)
 std::unique_ptr<Descriptor> InferDescriptor(const GenericAddress& dest_addr, const SigningProvider& provider)
 {
     if (dest_addr.IsMWEB()) {
-        return std::make_unique<MWEBDescriptor>(InferMWEBPubkey(dest_addr.GetMWEBAddress(), provider), SecretKey::Null());
+        return std::make_unique<MWEBDescriptor>(InferMWEBPubkey(dest_addr.GetMWEBAddress(), provider));
     }
 
     return InferScript(dest_addr.GetScript(), ParseScriptContext::TOP, provider);

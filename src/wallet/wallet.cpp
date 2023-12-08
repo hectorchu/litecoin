@@ -3728,11 +3728,7 @@ void CWallet::SetupDescriptorScriptPubKeyMans(const CExtKey& master_key)
                     throw std::runtime_error(std::string(__func__) + ": Could not encrypt new descriptors");
                 }
             }
-            if (t == OutputType::MWEB) {
-                continue; // MW: TODO - Don't skip MWEB once we support descriptors
-            }
-
-            spk_manager->SetupDescriptorGeneration(master_key, t, internal);
+            if (!spk_manager->SetupDescriptorGeneration(master_key, t, internal)) continue;
             uint256 id = spk_manager->GetID();
             m_spk_managers[id] = std::move(spk_manager);
             AddActiveScriptPubKeyMan(id, t, internal);
