@@ -386,7 +386,6 @@ public:
 class MWEBPubkeyProvider final : public PubkeyProvider
 {
     std::unique_ptr<PubkeyProvider> m_provider;
-    std::optional<CPubKey> m_scan_pubkey;
     std::optional<uint32_t> m_mweb_index;
     mutable mw::Keychain::Ptr m_keychain;
 
@@ -395,8 +394,8 @@ class MWEBPubkeyProvider final : public PubkeyProvider
         if (m_keychain) return true;
         CKey scan_key, spend_key;
         if (!m_provider->IsRange()) return false;
-        if (!m_provider->GetPrivKey(0, arg, scan_key)) return false;
-        if (!m_provider->GetPrivKey(1, arg, spend_key)) return false;
+        if (!m_provider->GetPrivKey(0x80000000L, arg, scan_key)) return false;
+        if (!m_provider->GetPrivKey(0x80000001L, arg, spend_key)) return false;
         m_keychain = std::make_shared<mw::Keychain>(
             nullptr,
             SecretKey(scan_key.begin()),
@@ -406,16 +405,13 @@ class MWEBPubkeyProvider final : public PubkeyProvider
     }
 
 public:
-    MWEBPubkeyProvider(uint32_t exp_index, std::unique_ptr<PubkeyProvider> provider, const std::optional<CPubKey>& scan_pubkey, const std::optional<uint32_t>& mweb_index) : PubkeyProvider(exp_index), m_provider(std::move(provider)), m_scan_pubkey(scan_pubkey), m_mweb_index(mweb_index) {}
-    bool IsRange() const override { return !m_mweb_index.has_value(); }
+    MWEBPubkeyProvider(uint32_t exp_index, std::unique_ptr<PubkeyProvider> provider, const std::optional<uint32_t>& mweb_index) : PubkeyProvider(exp_index), m_provider(std::move(provider)), m_mweb_index(mweb_index) {}
+    bool IsRange() const override { return m_provider->IsRange() && !m_mweb_index.has_value(); }
     bool IsMWEB() const override { return true; }
     size_t GetSize() const override { return 33; }
     bool GetPubKey(int pos, const SigningProvider& arg, CPubKey& key_out, KeyOriginInfo& final_info_out, const DescriptorCache* read_cache = nullptr, DescriptorCache* write_cache = nullptr) const override
     {
-        if (pos == -1 && m_scan_pubkey) {
-            key_out = *m_scan_pubkey;
-            return true;
-        }
+        if (m_mweb_index) pos = *m_mweb_index;
         if (!m_provider->GetPubKey(pos, arg, key_out, final_info_out, read_cache, write_cache)) return false;
         final_info_out.mweb_index = (uint32_t)pos;
         if (!m_provider->IsRange()) return true; // if const pubkey then just return it
@@ -457,7 +453,7 @@ public:
             secret = m_keychain->GetSpendSecret();
             break;
         default:
-            secret = m_keychain->GetSpendKey(pos);
+            secret = m_keychain->GetSpendKey(m_mweb_index.value_or(pos));
             break;
         }
         key.Set(secret.vec().begin(), secret.vec().end(), true);

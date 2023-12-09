@@ -2615,7 +2615,6 @@ bool DescriptorScriptPubKeyMan::SetupDescriptorGeneration(const CExtKey& master_
     }
 
     std::string internal_path = internal ? "/1" : "/0";
-    if (addr_type == OutputType::MWEB) internal_path = "";
     std::string desc_str = desc_prefix + "/0'" + internal_path + desc_suffix;
 
     // Make the descriptor
