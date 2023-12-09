@@ -248,6 +248,7 @@ BITCOIN_CORE_H = \
   script/descriptor.h \
   script/keyorigin.h \
   script/miniscript.h \
+  script/pubkeyprovider.h \
   script/sigcache.h \
   script/sign.h \
   script/signingprovider.h \
@@ -468,7 +469,6 @@ endif
 libbitcoin_wallet_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS) $(BDB_CPPFLAGS) $(SQLITE_CFLAGS)
 libbitcoin_wallet_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_wallet_a_SOURCES = \
-  libmw/src/wallet/Keychain.cpp \
   libmw/src/wallet/sign.cpp \
   libmw/src/wallet/TxBuilder.cpp \
   mweb/mweb_wallet.cpp \
@@ -688,6 +688,7 @@ libbitcoin_common_a_SOURCES = \
   libmw/src/mmr/PruneList.cpp \
   libmw/src/node/CoinsViewCache.cpp \
   libmw/src/node/CoinsViewDB.cpp \
+  libmw/src/wallet/Keychain.cpp \
   merkleblock.cpp \
   mweb/mweb_policy.cpp \
   net_types.cpp \
@@ -841,7 +842,6 @@ endif
 
 litecoin_tx_LDADD = \
   $(LIBUNIVALUE) \
-  $(LIBBITCOIN_WALLET) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_CONSENSUS) \
