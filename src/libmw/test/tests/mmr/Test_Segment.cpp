@@ -6,7 +6,6 @@
 #include <mw/mmr/MMRUtil.h>
 #include <mw/mmr/LeafSet.h>
 #include <mw/mmr/Segment.h>
-#include <boost/optional/optional_io.hpp>
 
 #include <test_framework/TestMWEB.h>
 
@@ -14,6 +13,16 @@ namespace std {
 ostream& operator<<(ostream& os, const mw::Hash& hash)
 {
     os << hash.ToHex();
+    return os;
+}
+
+template<typename T>
+ostream& operator<<(ostream& os, const std::optional<T>& opt)
+{
+    if (opt)
+        os << *opt;
+    else
+        os << "(none)";
     return os;
 }
 } // namespace std
@@ -35,10 +44,10 @@ static mmr::Leaf DeterministicLeaf(const uint64_t i)
     return mmr::Leaf::Create(mmr::LeafIndex::At(i), serialized);
 }
 
-static MMRWithLeafset BuildDetermininisticMMR(const uint64_t num_leaves)
+static MMRWithLeafset BuildDetermininisticMMR(const FilePath& dir, const uint64_t num_leaves)
 {
     auto mmr = std::make_shared<MemMMR>();
-    auto leafset = LeafSet::Open(m_path_root, 0);
+    auto leafset = LeafSet::Open(dir, 0);
     for (size_t i = 0; i < num_leaves; i++) {
         mmr->AddLeaf(DeterministicLeaf(i));
         leafset->Add(mmr::LeafIndex::At(i));
@@ -51,7 +60,7 @@ BOOST_FIXTURE_TEST_SUITE(TestSegment, MWEBTestingSetup)
 
 BOOST_AUTO_TEST_CASE(AssembleSegment)
 {
-    auto mmr_with_leafset = BuildDetermininisticMMR(15);
+    auto mmr_with_leafset = BuildDetermininisticMMR(m_path_root, 15);
     auto mmr = mmr_with_leafset.mmr;
     auto leafset = mmr_with_leafset.leafset;
     Segment segment = SegmentFactory::Assemble(

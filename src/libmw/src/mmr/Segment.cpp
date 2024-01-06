@@ -58,7 +58,7 @@ std::set<Index> SegmentFactory::CalcHashIndices(
     std::set<Index> proof_indices;
 
     // 1. Add peaks of mountains to the left of first index
-    std::optional<Index> prev_peak = std::make_optional(false, Index());
+    std::optional<Index> prev_peak;
     for (const Index& peak_idx : peak_indices) {
         if (peak_idx < first_leaf_idx.GetNodeIndex()) {
             proof_indices.insert(peak_idx);

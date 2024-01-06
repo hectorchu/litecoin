@@ -258,6 +258,32 @@ extern const char* CFCHECKPT;
  * @since protocol version 70016 as described by BIP 339.
  */
 extern const char* WTXIDRELAY;
+/**
+ * Contains a CMerkleBlockWithMWEB.
+ * Sent in response to a getdata message which requested a
+ * block using the inventory type MSG_MWEB_HEADER.
+ * @since protocol version 70017 as described by LIP-0006
+ */
+extern const char* MWEBHEADER;
+/**
+ * Contains a block hash and its serialized leafset.
+ * Sent in response to a getdata message which requested
+ * data using the inventory type MSG_MWEB_LEAFSET.
+ * @since protocol version 70017 as described by LIP-0006
+ */
+extern const char* MWEBLEAFSET;
+/**
+ * getmwebutxos requests a variable number of consecutive
+ * MWEB utxos at the time of the provided block hash.
+ * @since protocol version 70017 as described by LIP-0006
+ */
+extern const char* GETMWEBUTXOS;
+/**
+ * Contains a list of MWEB UTXOs that were requested in
+ * a getmwebutxos message.
+ * @since protocol version 70017 as described by LIP-0006
+ */
+extern const char* MWEBUTXOS;
 }; // namespace NetMsgType
 
 /* Get a vector of all valid message types (see above) */
@@ -471,6 +497,8 @@ enum GetDataMsg : uint32_t {
     // MSG_FILTERED_WITNESS_BLOCK = MSG_FILTERED_BLOCK | MSG_WITNESS_FLAG,
     MSG_MWEB_BLOCK = MSG_WITNESS_BLOCK | MSG_MWEB_FLAG,
     MSG_MWEB_TX = MSG_WITNESS_TX | MSG_MWEB_FLAG,
+    MSG_MWEB_HEADER = 8 | MSG_MWEB_FLAG,            //!< Defined in LIP-0006
+    MSG_MWEB_LEAFSET = 9 | MSG_MWEB_FLAG,           //!< Defined in LIP-0006
 };
 
 /** inv message data */
@@ -495,6 +523,8 @@ public:
     bool IsMsgCmpctBlk() const { return type == MSG_CMPCT_BLOCK; }
     bool IsMsgWitnessBlk() const { return type == MSG_WITNESS_BLOCK; }
     bool IsMsgMWEBBlk() const { return type == MSG_MWEB_BLOCK; }
+    bool IsMsgMWEBHeader() const { return type == MSG_MWEB_HEADER; }
+    bool IsMsgMWEBLeafset() const { return type == MSG_MWEB_LEAFSET; }
 
     // Combined-message helper methods
     bool IsGenTxMsg() const
@@ -503,7 +533,7 @@ public:
     }
     bool IsGenBlkMsg() const
     {
-        return type == MSG_BLOCK || type == MSG_FILTERED_BLOCK || type == MSG_CMPCT_BLOCK || type == MSG_WITNESS_BLOCK || type == MSG_MWEB_BLOCK;
+        return type == MSG_BLOCK || type == MSG_FILTERED_BLOCK || type == MSG_CMPCT_BLOCK || type == MSG_WITNESS_BLOCK || type == MSG_MWEB_BLOCK || type == MSG_MWEB_HEADER;
     }
 
     uint32_t type;
