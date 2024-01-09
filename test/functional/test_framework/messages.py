@@ -2423,26 +2423,26 @@ class MWEBHeader:
         self.rehash()
 
     def deserialize(self, f):
-        self.height = deser_varint(f)
+        self.height = struct.unpack("<i", f.read(4))[0]
         self.output_root = Hash.deserialize(f)
         self.kernel_root = Hash.deserialize(f)
         self.leafset_root = Hash.deserialize(f)
         self.kernel_offset = Hash.deserialize(f)
         self.stealth_offset = Hash.deserialize(f)
-        self.num_txos = deser_varint(f)
-        self.num_kernels = deser_varint(f)
+        self.num_txos = deser_compact_size(f)
+        self.num_kernels = deser_compact_size(f)
         self.rehash()
 
     def serialize(self):
         r = b""
-        r += ser_varint(self.height)
+        r += struct.pack("<i", self.height)
         r += self.output_root.serialize()
         r += self.kernel_root.serialize()
         r += self.leafset_root.serialize()
         r += self.kernel_offset.serialize()
         r += self.stealth_offset.serialize()
-        r += ser_varint(self.num_txos)
-        r += ser_varint(self.num_kernels)
+        r += ser_compact_size(self.num_txos)
+        r += ser_compact_size(self.num_kernels)
         return r
     
     def rehash(self):
