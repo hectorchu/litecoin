@@ -2329,12 +2329,6 @@ void PeerManagerImpl::ProcessGetMWEBLeafset(CNode& pfrom, Peer& peer, const CInv
     // For performance reasons, we limit how many blocks can be undone in order to rebuild the leafset
     if (m_chainman.ActiveChain().Tip()->nHeight - pindex->nHeight > MAX_MWEB_LEAFSET_DEPTH) {
         LogPrint(BCLog::NET, "Ignore mweb leafset request below MAX_MWEB_LEAFSET_DEPTH threshold from peer=%d\n", pfrom.GetId());
-
-        // disconnect node and prevent it from stalling (would otherwise wait for the MWEB leafset)
-        if (!pfrom.HasPermission(NetPermissionFlags::NoBan)) {
-            pfrom.fDisconnect = true;
-        }
-
         return;
     }
 
