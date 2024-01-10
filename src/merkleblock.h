@@ -201,19 +201,7 @@ public:
     CMerkleBlockWithMWEB() { }
     CMerkleBlockWithMWEB(const CBlock& block);
 
-    SERIALIZE_METHODS(CMerkleBlockWithMWEB, obj)
-    {
-        READWRITE(obj.merkle);
-        READWRITE(obj.hogex);
-        READWRITE(obj.mweb_header->GetHeight());
-        READWRITE(obj.mweb_header->GetOutputRoot());
-        READWRITE(obj.mweb_header->GetKernelRoot());
-        READWRITE(obj.mweb_header->GetLeafsetRoot());
-        READWRITE(obj.mweb_header->GetKernelOffset());
-        READWRITE(obj.mweb_header->GetStealthOffset());
-        READWRITE(COMPACTSIZE(obj.mweb_header->GetNumTXOs()));
-        READWRITE(COMPACTSIZE(obj.mweb_header->GetNumKernels()));
-    }
+    SERIALIZE_METHODS(CMerkleBlockWithMWEB, obj) { READWRITE(obj.merkle, obj.hogex, obj.mweb_header); }
 };
 
 #endif // BITCOIN_MERKLEBLOCK_H
