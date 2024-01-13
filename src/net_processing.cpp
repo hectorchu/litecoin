@@ -957,7 +957,6 @@ private:
 
     struct MWEBLeafsetMsg
     {
-        MWEBLeafsetMsg() = default;
         MWEBLeafsetMsg(uint256 block_hash_in, BitSet leafset_in)
             : block_hash(std::move(block_hash_in)), leafset(std::move(leafset_in)) { }
 
@@ -2331,8 +2330,11 @@ void PeerManagerImpl::ProcessGetMWEBLeafset(CNode& pfrom, Peer& peer, const CInv
     if (m_chainman.ActiveChain().Tip()->nHeight - pindex->nHeight > MAX_MWEB_LEAFSET_DEPTH) {
         LogPrint(BCLog::NET, "Ignore mweb leafset request below MAX_MWEB_LEAFSET_DEPTH threshold from peer=%d\n", pfrom.GetId());
 
-        // Serve an empty leafset to avoid stalling
-        m_connman.PushMessage(&pfrom, CNetMsgMaker(pfrom.GetCommonVersion()).Make(NetMsgType::MWEBLEAFSET, MWEBLeafsetMsg()));
+        // disconnect node and prevent it from stalling (would otherwise wait for the MWEB leafset)
+        if (!pfrom.HasPermission(NetPermissionFlags::NoBan)) {
+            pfrom.fDisconnect = true;
+        }
+
         return;
     }
 
