@@ -13,12 +13,12 @@ public:
 
     void Write(const std::string& key, const std::vector<uint8_t>& value) final
     {
-        m_pBatch->Write(key, value);
+        m_pBatch->Write(Span(key), value);
     }
 
     void Erase(const std::string& key) final
     {
-        m_pBatch->Erase(key);
+        m_pBatch->Erase(Span(key));
     }
 
     void Commit() final
@@ -39,7 +39,7 @@ public:
 
     void Seek(const std::string& key) final
     {
-        m_pIterator->Seek(key);
+        m_pIterator->Seek(Span(key));
     }
 
     void Next() final
@@ -68,7 +68,7 @@ public:
 
     bool Read(const std::string& key, std::vector<uint8_t>& value) const final
     {
-        return m_pDB->Read(key, value);
+        return m_pDB->Read(Span(key), value);
     }
 
     std::unique_ptr<mw::DBIterator> NewIterator() final
