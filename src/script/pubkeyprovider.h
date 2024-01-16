@@ -75,12 +75,13 @@ class OriginPubkeyProvider final : public PubkeyProvider
 
     std::string OriginString() const
     {
-        std::string origin_string = HexStr(m_origin.fingerprint) + FormatHDKeypath(m_origin.path);
+        std::string origin_string = HexStr(m_origin.fingerprint) + FormatHDKeypath(m_origin.hdkeypath);
+        // MW: TODO - The m_provider for MWEB descriptors would be BIP32PubkeyProvider or ConstPubkeyProvider, not MWEBPubkeyProvider. A better solution is needed
         if (m_provider->IsMWEB()) {
             origin_string += "/x";
 
-            if (m_origin.mweb_index.has_value()) {
-                origin_string += "/" + std::to_string(m_origin.mweb_index.value());
+            if (m_origin.hdkeypath.mweb_index.has_value()) {
+                origin_string += "/" + std::to_string(m_origin.hdkeypath.mweb_index.value());
             }
         }
 
@@ -93,7 +94,7 @@ public:
     {
         if (!m_provider->GetPubKey(pos, arg, key, info, read_cache, write_cache)) return false;
         std::copy(std::begin(m_origin.fingerprint), std::end(m_origin.fingerprint), info.fingerprint);
-        info.path.insert(info.path.begin(), m_origin.path.begin(), m_origin.path.end());
+        info.hdkeypath.path.insert(info.hdkeypath.path.begin(), m_origin.hdkeypath.path.begin(), m_origin.hdkeypath.path.end());
         return true;
     }
     bool IsRange() const override { return m_provider->IsRange(); }
@@ -139,7 +140,7 @@ public:
     bool GetPubKey(int pos, const SigningProvider& arg, CPubKey& key, KeyOriginInfo& info, const DescriptorCache* read_cache = nullptr, DescriptorCache* write_cache = nullptr) const override
     {
         key = m_pubkey;
-        info.path.clear();
+        info.hdkeypath.path.clear();
         CKeyID keyid = m_pubkey.GetID();
         std::copy(keyid.begin(), keyid.begin() + sizeof(info.fingerprint), info.fingerprint);
         return true;
@@ -185,7 +186,7 @@ class BIP32PubkeyProvider final : public PubkeyProvider
 {
     // Root xpub, path, and final derivation step type being used, if any
     CExtPubKey m_root_extkey;
-    KeyPath m_path;
+    HDKeyPath m_path;
     DeriveType m_derive;
 
     bool GetExtKey(const SigningProvider& arg, CExtKey& ret) const
@@ -204,7 +205,7 @@ class BIP32PubkeyProvider final : public PubkeyProvider
     bool GetDerivedExtKey(const SigningProvider& arg, CExtKey& xprv, CExtKey& last_hardened) const
     {
         if (!GetExtKey(arg, xprv)) return false;
-        for (auto entry : m_path) {
+        for (auto entry : m_path.path) {
             if (!xprv.Derive(xprv, entry)) return false;
             if (entry >> 31) {
                 last_hardened = xprv;
@@ -216,14 +217,14 @@ class BIP32PubkeyProvider final : public PubkeyProvider
     bool IsHardened() const
     {
         if (m_derive == DeriveType::HARDENED) return true;
-        for (auto entry : m_path) {
+        for (auto entry : m_path.path) {
             if (entry >> 31) return true;
         }
         return false;
     }
 
 public:
-    BIP32PubkeyProvider(uint32_t exp_index, const CExtPubKey& extkey, KeyPath path, DeriveType derive) : PubkeyProvider(exp_index), m_root_extkey(extkey), m_path(std::move(path)), m_derive(derive) {}
+    BIP32PubkeyProvider(uint32_t exp_index, const CExtPubKey& extkey, HDKeyPath path, DeriveType derive) : PubkeyProvider(exp_index), m_root_extkey(extkey), m_path(std::move(path)), m_derive(derive) {}
     bool IsRange() const override { return m_derive != DeriveType::NO; }
     bool IsMWEB() const override { return false; }
     size_t GetSize() const override { return 33; }
@@ -233,12 +234,12 @@ public:
         KeyOriginInfo parent_info;
         CKeyID keyid = m_root_extkey.pubkey.GetID();
         std::copy(keyid.begin(), keyid.begin() + sizeof(parent_info.fingerprint), parent_info.fingerprint);
-        parent_info.path = m_path;
+        parent_info.hdkeypath = m_path;
 
         // Info of the derived key itself which is copied out upon successful completion
         KeyOriginInfo final_info_out_tmp = parent_info;
-        if (m_derive == DeriveType::UNHARDENED) final_info_out_tmp.path.push_back((uint32_t)pos);
-        if (m_derive == DeriveType::HARDENED) final_info_out_tmp.path.push_back(((uint32_t)pos) | 0x80000000L);
+        if (m_derive == DeriveType::UNHARDENED) final_info_out_tmp.hdkeypath.path.push_back((uint32_t)pos);
+        if (m_derive == DeriveType::HARDENED) final_info_out_tmp.hdkeypath.path.push_back(((uint32_t)pos) | 0x80000000L);
 
         // Derive keys or fetch them from cache
         CExtPubKey final_extkey = m_root_extkey;
@@ -265,7 +266,7 @@ public:
                 last_hardened_extkey = lh_xprv.Neuter();
             }
         } else {
-            for (auto entry : m_path) {
+            for (auto entry : m_path.path) {
                 if (!parent_extkey.Derive(parent_extkey, entry)) return false;
             }
             final_extkey = parent_extkey;
@@ -285,7 +286,7 @@ public:
                 if (last_hardened_extkey.pubkey.IsValid()) {
                     write_cache->CacheLastHardenedExtPubKey(m_expr_index, last_hardened_extkey);
                 }
-            } else if (final_info_out.path.size() > 0) {
+            } else if (final_info_out.hdkeypath.path.size() > 0) {
                 write_cache->CacheDerivedExtPubKey(m_expr_index, pos, final_extkey);
             }
         }
@@ -320,9 +321,9 @@ public:
             return true;
         }
         // Step backwards to find the last hardened step in the path
-        int i = (int)m_path.size() - 1;
+        int i = (int)m_path.path.size() - 1;
         for (; i >= 0; --i) {
-            if (m_path.at(i) >> 31) {
+            if (m_path.path.at(i) >> 31) {
                 break;
             }
         }
@@ -336,12 +337,12 @@ public:
         int k = 0;
         for (; k <= i; ++k) {
             // Add to the path
-            origin.path.push_back(m_path.at(k));
+            origin.hdkeypath.path.push_back(m_path.path.at(k));
         }
         // Build the remaining path
-        KeyPath end_path;
-        for (; k < (int)m_path.size(); ++k) {
-            end_path.push_back(m_path.at(k));
+        HDKeyPath end_path;
+        for (; k < (int)m_path.path.size(); ++k) {
+            end_path.path.push_back(m_path.path.at(k));
         }
         // Get the fingerprint
         CKeyID id = m_root_extkey.pubkey.GetID();
@@ -362,7 +363,7 @@ public:
         assert(xpub.pubkey.IsValid());
 
         // Build the string
-        std::string origin_str = HexStr(origin.fingerprint) + FormatHDKeypath(origin.path);
+        std::string origin_str = HexStr(origin.fingerprint) + FormatHDKeypath(origin.hdkeypath);
         out = "[" + origin_str + "]" + EncodeExtPubKey(xpub) + FormatHDKeypath(end_path);
         if (IsRange()) {
             out += "/*";
@@ -378,85 +379,6 @@ public:
         if (m_derive == DeriveType::UNHARDENED && !extkey.Derive(extkey, pos)) return false;
         if (m_derive == DeriveType::HARDENED && !extkey.Derive(extkey, pos | 0x80000000UL)) return false;
         key = extkey.key;
-        return true;
-    }
-};
-
-/** An object representing a parsed public key in an MWEB descriptor. */
-class MWEBPubkeyProvider final : public PubkeyProvider
-{
-    std::unique_ptr<PubkeyProvider> m_provider;
-    std::optional<uint32_t> m_mweb_index;
-    mutable mw::Keychain::Ptr m_keychain;
-
-    bool EnsureKeychain(const SigningProvider& arg) const
-    {
-        if (m_keychain) return true;
-        CKey scan_key, spend_key;
-        if (!m_provider->IsRange()) return false;
-        if (!m_provider->GetPrivKey(0x80000000L, arg, scan_key)) return false;
-        if (!m_provider->GetPrivKey(0x80000001L, arg, spend_key)) return false;
-        m_keychain = std::make_shared<mw::Keychain>(
-            nullptr,
-            SecretKey(scan_key.begin()),
-            SecretKey(spend_key.begin())
-        );
-        return true;
-    }
-
-public:
-    MWEBPubkeyProvider(uint32_t exp_index, std::unique_ptr<PubkeyProvider> provider, const std::optional<uint32_t>& mweb_index) : PubkeyProvider(exp_index), m_provider(std::move(provider)), m_mweb_index(mweb_index) {}
-    bool IsRange() const override { return m_provider->IsRange() && !m_mweb_index.has_value(); }
-    bool IsMWEB() const override { return true; }
-    size_t GetSize() const override { return 33; }
-    bool GetPubKey(int pos, const SigningProvider& arg, CPubKey& key_out, KeyOriginInfo& final_info_out, const DescriptorCache* read_cache = nullptr, DescriptorCache* write_cache = nullptr) const override
-    {
-        if (m_mweb_index) pos = *m_mweb_index;
-        if (!m_provider->GetPubKey(pos, arg, key_out, final_info_out, read_cache, write_cache)) return false;
-        final_info_out.mweb_index = (uint32_t)pos;
-        if (!m_provider->IsRange()) return true; // if const pubkey then just return it
-        CExtPubKey extkey;
-        if (read_cache) {
-            if (!read_cache->GetCachedDerivedExtPubKey(m_expr_index, pos, extkey)) return false;
-            key_out = extkey.pubkey;
-            return true;
-        }
-        if (!EnsureKeychain(arg)) return false;
-        key_out = CPubKey(m_keychain->GetStealthAddress(pos).GetSpendPubKey().vec());
-        if (write_cache) {
-            extkey.pubkey = key_out;
-            write_cache->CacheDerivedExtPubKey(m_expr_index, pos, extkey);
-        }
-        return true;
-    }
-    std::string ToString() const override
-    {
-        return m_provider->ToString();
-    }
-    bool ToPrivateString(const SigningProvider& arg, std::string& out) const override
-    {
-        return m_provider->ToPrivateString(arg, out);
-    }
-    bool ToNormalizedString(const SigningProvider& arg, std::string& out, const DescriptorCache* cache) const override
-    {
-        return m_provider->ToNormalizedString(arg, out, cache);
-    }
-    bool GetPrivKey(int pos, const SigningProvider& arg, CKey& key) const override
-    {
-        if (!EnsureKeychain(arg)) return false;
-        SecretKey secret;
-        switch (pos) {
-        case -1:
-            secret = m_keychain->GetScanSecret();
-            break;
-        case -2:
-            secret = m_keychain->GetSpendSecret();
-            break;
-        default:
-            secret = m_keychain->GetSpendKey(m_mweb_index.value_or(pos));
-            break;
-        }
-        key.Set(secret.vec().begin(), secret.vec().end(), true);
         return true;
     }
 };

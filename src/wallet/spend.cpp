@@ -357,7 +357,7 @@ bool FindNonChangeParentOutputDestination(const CWallet& wallet, const CWalletTx
     AssertLockHeld(wallet.cs_wallet);
     const CWalletTx* ptx = &wtx;
     GenericOutputID id = output_id;
-    while (OutputIsChange(wallet, *ptx, id) && ptx->GetInputs().size() > 0) {
+    while (OutputIsChange(wallet, ptx->tx, id) && ptx->GetInputs().size() > 0) {
         GenericInput input = ptx->GetInputs().front();
         const CWalletTx* prev_wtx = wallet.FindPrevTx(input);
         if (prev_wtx == nullptr || !wallet.IsMine(input.GetID())) {
@@ -841,6 +841,8 @@ util::Result<CreatedTransactionResult> CreateTransaction(
         const std::vector<CRecipient>& vecSend,
         int change_pos,
         const CCoinControl& coin_control,
+        const std::optional<int32_t>& nVersion,
+        const std::optional<uint32_t>& nLockTime,
         bool sign)
 {
     if (vecSend.empty()) {
@@ -873,7 +875,7 @@ util::Result<CreatedTransactionResult> CreateTransaction(
     LOCK(wallet.cs_wallet);
 
     const std::optional<int> opt_change_pos = (change_pos != -1) ? std::make_optional<int>(change_pos) : std::nullopt;
-    auto res = TxBuilder::New(wallet, coin_control, vecSend, opt_change_pos)->Build(sign);
+    auto res = TxBuilder::New(wallet, coin_control, vecSend, opt_change_pos)->Build(nVersion, nLockTime, sign);
     TRACE4(coin_selection, normal_create_tx_internal, wallet.GetName().c_str(), bool(res),
            res ? res->fee : 0, res ? res->change_pos : 0);
     if (!res) return res;
@@ -883,7 +885,7 @@ util::Result<CreatedTransactionResult> CreateTransaction(
         TRACE1(coin_selection, attempting_aps_create_tx, wallet.GetName().c_str());
         CCoinControl tmp_cc = coin_control;
         tmp_cc.m_avoid_partial_spends = true;
-        auto txr_grouped = TxBuilder::New(wallet, tmp_cc, vecSend, opt_change_pos)->Build(sign);
+        auto txr_grouped = TxBuilder::New(wallet, tmp_cc, vecSend, opt_change_pos)->Build(nVersion, nLockTime, sign);
         // if fee of this alternative one is within the range of the max fee, we use this one
         const bool use_aps{txr_grouped.has_value() ? (txr_grouped->fee <= txr_ungrouped.fee + wallet.m_max_aps_fee) : false};
         TRACE5(coin_selection, aps_create_tx_internal, wallet.GetName().c_str(), use_aps, txr_grouped.has_value(),

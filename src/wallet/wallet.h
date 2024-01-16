@@ -807,8 +807,8 @@ public:
     ScriptPubKeyMan* GetScriptPubKeyMan(const uint256& id) const;
 
     //! Get the SigningProvider for a script
-    std::unique_ptr<SigningProvider> GetSolvingProvider(const CScript& script) const;
-    std::unique_ptr<SigningProvider> GetSolvingProvider(const CScript& script, SignatureData& sigdata) const;
+    std::unique_ptr<SigningProvider> GetSolvingProvider(const GenericAddress& address) const;
+    std::unique_ptr<SigningProvider> GetSolvingProvider(const GenericAddress& address, SignatureData& sigdata) const;
 
     //! Get the wallet descriptors for a script.
     std::vector<WalletDescriptor> GetWalletDescriptors(const GenericAddress& dest_addr) const;

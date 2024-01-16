@@ -15,6 +15,7 @@
 #include <util/message.h>
 #include <util/result.h>
 #include <util/ui_change_type.h>
+#include <wallet/txrecord.h>
 
 #include <cstdint>
 #include <functional>
@@ -36,6 +37,7 @@ struct bilingual_str;
 namespace wallet {
 class CCoinControl;
 class CWallet;
+class ReserveDestination;
 enum isminetype : unsigned int;
 struct CRecipient;
 struct WalletContext;
@@ -90,6 +92,9 @@ public:
 
     // Get a new address.
     virtual util::Result<CTxDestination> getNewDestination(const OutputType type, const std::string& label) = 0;
+
+    // Reserves a new key.
+    virtual std::shared_ptr<wallet::ReserveDestination> reserveNewDestination(const OutputType type) = 0;
 
     //! Get public key.
     virtual bool getPubKey(const CScript& script, const CKeyID& address, CPubKey& pub_key) = 0;
@@ -152,7 +157,8 @@ public:
     //! Commit transaction.
     virtual void commitTransaction(CTransactionRef tx,
         WalletValueMap value_map,
-        WalletOrderForm order_form) = 0;
+        WalletOrderForm order_form,
+        const std::vector<wallet::ReserveDestination*>& reserved_keys) = 0;
 
     //! Return whether transaction can be abandoned.
     virtual bool transactionCanBeAbandoned(const uint256& txid) = 0;
@@ -184,10 +190,10 @@ public:
     virtual CTransactionRef getTx(const uint256& txid) = 0;
 
     //! Get transaction information.
-    virtual WalletTx getWalletTx(const uint256& txid) = 0;
+    virtual std::vector<wallet::WalletTxRecord> getWalletTxRecords(const uint256& txid) = 0;
 
     //! Get list of all wallet transactions.
-    virtual std::set<WalletTx> getWalletTxs() = 0;
+    virtual std::vector<wallet::WalletTxRecord> getWalletTxs() = 0;
 
     //! Try to get updated status for a particular transaction, if possible without blocking.
     virtual bool tryGetTxStatus(const uint256& txid,
@@ -229,10 +235,13 @@ public:
     virtual wallet::isminetype txoutIsMine(const GenericOutput& output) = 0;
 
     //! Return the value of the output.
-    virtual CAmount getValue(const GenericOutput& txout) = 0;
+    virtual CAmount getValue(const GenericOutput& output) = 0;
 
     //! Return debit amount if transaction input belongs to wallet.
     virtual CAmount getDebit(const GenericInput& input, wallet::isminefilter filter) = 0;
+
+    //! Return true if the output is a change output.
+    virtual bool isChange(const CTransactionRef& tx, const GenericOutputID& output_id) = 0;
 
     //! Return AvailableCoins + LockedCoins grouped by wallet address.
     //! (put change in one group with wallet address)
@@ -281,6 +290,9 @@ public:
 
     //! Return whether is a legacy wallet
     virtual bool isLegacy() = 0;
+
+    // Get pegin address from MWEB wallet.
+    virtual bool getPeginAddress(StealthAddress& pegin_address) = 0;
 
     //! Register handler for unload message.
     using UnloadFn = std::function<void()>;
@@ -399,7 +411,7 @@ struct WalletTxOut
     wallet::isminetype is_mine;
     GenericAddress address;
     wallet::isminetype address_is_mine;
-    GenericOutputID output_index;
+    GenericOutputID output_id;
     CAmount nValue;
     int64_t time;
     int depth_in_main_chain = -1;

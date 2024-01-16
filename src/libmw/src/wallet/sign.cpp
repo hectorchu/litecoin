@@ -63,7 +63,7 @@ static util::Result<SignInputResult> SignInput(MutableInput& input) noexcept
 
     input.output_pubkey = PublicKey::From(*input.spend_key);
 
-    LOG_INFO("Signing input (amount: {})", input.amount.value());
+    LOG_INFO("DEBUG: Signing input (amount: {})", input.amount.value());
     if (!input.ephemeral_key) {
         input.ephemeral_key = SecretKey::Random();
     }
@@ -107,7 +107,7 @@ static util::Result<SignOutputResult> SignOutput(MutableOutput& output) noexcept
         return util::Error{Untranslated("Output amount or address missing")};
     }
 
-    LOG_INFO("Signing output");
+    LOG_INFO("DEBUG: Signing output");
     BlindingFactor raw_blind;
     SecretKey ephemeral_key = SecretKey::Random();
     mw::Output finalized = mw::Output::Create(
@@ -134,7 +134,7 @@ util::Result<mw::SignTxResult> SignTx(CMutableTransaction& tx) noexcept
 {
     SignTxResult result{};
     if (tx.mweb_tx.IsNull()) {
-        LOG_INFO("mw::MutableTx IsNull");
+        LOG_INFO("DEBUG: mw::MutableTx IsNull");
         return result;
     }
 
@@ -230,9 +230,9 @@ util::Result<mw::SignTxResult> SignTx(CMutableTransaction& tx) noexcept
         }
 
         finalized_tx.mweb_tx.m_transaction->Validate();
-        LOG_INFO("Valid Tx: {}", finalized_tx.ToString());
+        LOG_INFO("DEBUG: Valid Tx - {}", finalized_tx.ToString());
     } catch (std::exception& e) {
-        LOG_INFO("Validate() failed: {} for tx: {}", e.what(), finalized_tx.ToString());
+        LOG_INFO("DEBUG: Validate() failed - {} for tx: {}", e.what(), finalized_tx.ToString());
         return util::Error{Untranslated("Validate failed")};
     }
 

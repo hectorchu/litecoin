@@ -332,8 +332,8 @@ void DoCheck(const std::string& prv, const std::string& pub, const std::string& 
             // Test whether the observed key path is present in the 'paths' variable (which contains expected, unobserved paths),
             // and then remove it from that set.
             for (const auto& origin : script_provider.origins) {
-                BOOST_CHECK_MESSAGE(paths.count(origin.second.second.path), "Unexpected key path: " + prv);
-                left_paths.erase(origin.second.second.path);
+                BOOST_CHECK_MESSAGE(paths.count(origin.second.second.hdkeypath.path), "Unexpected key path: " + prv);
+                left_paths.erase(origin.second.second.hdkeypath.path);
             }
         }
     }
@@ -1057,17 +1057,19 @@ void CheckDescriptorPrivate(const std::unique_ptr<Descriptor>& desc, const Signi
     BOOST_CHECK_EQUAL(out, expected + '#' + GetDescriptorChecksum(expected));
 }
 
+static const int KEY_INDICES_TO_TEST = 1000;
+
 BOOST_AUTO_TEST_CASE(mweb_descriptor_test)
 {
     static const std::string xprv = "xprv9s21ZrQH143K31xYSDQpPDxsXRTUcvj2iNHm5NUtrGiGG5e2DtALGdso3pGz6ssrdK4PFmM8NSpSBHNqPqm55Qn3LqFtT2emdEXVYsCzC2U";
     static const std::string xpub = "xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB";
 
     CExtKey root_key = DecodeExtKey(xprv);
-    CExtKey purpose_key, account_key, scan_key, spend_key;
-    BOOST_REQUIRE(root_key.Derive(purpose_key, 1000 | 0x80000000UL));
-    BOOST_REQUIRE(purpose_key.Derive(account_key, 0x80000000UL));
-    BOOST_REQUIRE(account_key.Derive(scan_key, 0x80000000UL));
-    BOOST_REQUIRE(account_key.Derive(spend_key, 0x80000001UL));
+    CExtKey master_key, purpose_key, scan_key, spend_key;
+    BOOST_REQUIRE(root_key.Derive(master_key, 0 | 0x80000000UL));
+    BOOST_REQUIRE(master_key.Derive(purpose_key, 100 | 0x80000000UL));
+    BOOST_REQUIRE(purpose_key.Derive(scan_key, 0x80000000UL));
+    BOOST_REQUIRE(purpose_key.Derive(spend_key, 0x80000001UL));
     auto keychain = std::make_shared<mw::Keychain>(
         nullptr,
         SecretKey(scan_key.key.begin()),
@@ -1079,62 +1081,105 @@ BOOST_AUTO_TEST_CASE(mweb_descriptor_test)
 
     // Ranged
 
-    auto desc_str = "mweb(" + xprv + "/1000'/0'/*)";
+    auto desc_str = "mweb(" + xprv + "/0'/100'/*)";
     auto desc = Parse(desc_str, keys, error);
     BOOST_REQUIRE(desc);
-    CheckDescriptor(desc, "mweb(" + xpub + "/1000'/0'/*)");
+    CheckDescriptor(desc, "mweb(" + xpub + "/0'/100'/*)");
     CheckDescriptorPrivate(desc, keys, desc_str);
     BOOST_CHECK(desc->GetOutputType() == OutputType::MWEB);
     BOOST_CHECK_EQUAL(desc->IsRange(), true);
 
-    std::vector<GenericAddress> output_scripts;
+    CKeyID root_key_id = root_key.Neuter().pubkey.GetID();
+    std::string fingerprint = HexStr(Span(root_key_id.begin(), 4));
+
+    std::vector<GenericAddress> output_addresses;
     DescriptorCache cache;
-    for (int pos = 0; pos < 1000; pos++) {
-        BOOST_REQUIRE(desc->Expand(pos, keys, output_scripts, keys, &cache));
-        BOOST_CHECK(output_scripts[0] == keychain->GetStealthAddress(pos));
-    }
-    for (int pos = 0; pos < 1000; pos++) {
-        BOOST_REQUIRE(desc->ExpandFromCache(pos, cache, output_scripts, keys));
-        BOOST_CHECK(output_scripts[0] == keychain->GetStealthAddress(pos));
+    KeyOriginInfo origin_info;
+    CKey key;
+    CPubKey pubkey;
+
+    for (int pos = 0; pos < KEY_INDICES_TO_TEST; pos++) {
+        BOOST_REQUIRE(desc->Expand(pos, keys, output_addresses, keys, &cache));
+
+        // Check generated MWEB address
+        BOOST_REQUIRE_EQUAL(output_addresses.size(), 1);
+        StealthAddress mweb_address = output_addresses[0].GetMWEBAddress();
+        CKeyID key_id = mweb_address.B().GetID();
+        BOOST_CHECK(mweb_address == keychain->GetStealthAddress(pos));
+
+        // Check Pubkey
+        BOOST_CHECK(keys.GetPubKey(key_id, pubkey));
+        BOOST_CHECK(PublicKey(pubkey.begin()) == mweb_address.B());
+
+        // Check key origin
+        BOOST_CHECK(keys.GetKeyOrigin(key_id, origin_info));
+        BOOST_CHECK_EQUAL(HexStr(origin_info.fingerprint), fingerprint);
+        BOOST_CHECK_EQUAL(WriteHDKeypath(origin_info.hdkeypath), strprintf("m/0'/100'/x/%d", pos));
+
+        // Test that secret key is available after ExpandPrivate
+        BOOST_CHECK(!keys.GetKey(key_id, key));
+        desc->ExpandPrivate(pos, keys, keys);
+        BOOST_CHECK(keys.GetKey(key_id, key));
+        BOOST_CHECK(SecretKey(key.begin()) == keychain->GetSpendKey(pos));
     }
 
-    desc_str = "mweb(" + xpub + "/1000'/0'/*)";
+    keys = FlatSigningProvider();
+    for (int pos = 0; pos < KEY_INDICES_TO_TEST; pos++) {
+        BOOST_REQUIRE(desc->ExpandFromCache(pos, cache, output_addresses, keys));
+
+        // Check generated MWEB address
+        BOOST_REQUIRE_EQUAL(output_addresses.size(), 1);
+        StealthAddress mweb_address = output_addresses[0].GetMWEBAddress();
+        CKeyID key_id = mweb_address.B().GetID();
+        BOOST_CHECK(mweb_address == keychain->GetStealthAddress(pos));
+
+        // Check Pubkey
+        BOOST_CHECK(keys.GetPubKey(key_id, pubkey));
+        BOOST_CHECK(PublicKey(pubkey.begin()) == mweb_address.B());
+
+        // Check key origin
+        BOOST_CHECK(keys.GetKeyOrigin(key_id, origin_info));
+        BOOST_CHECK_EQUAL(HexStr(origin_info.fingerprint), fingerprint);
+        BOOST_CHECK_EQUAL(WriteHDKeypath(origin_info.hdkeypath), strprintf("m/0'/100'/x/%d", pos));
+    }
+
+    desc_str = "mweb(" + xpub + "/0'/100'/*)";
     desc = Parse(desc_str, keys, error);
     BOOST_REQUIRE(desc);
     CheckDescriptor(desc, desc_str);
 
     // Fixed index
 
-    for (int pos = 0; pos < 1000; pos++) {
-        desc_str = "mweb(" + xprv + "/1000'/0'/*," + std::to_string(pos) + ")";
+    for (int pos = 0; pos < KEY_INDICES_TO_TEST; pos++) {
+        desc_str = "mweb(" + xprv + "/0'/100'/*," + std::to_string(pos) + ")";
         desc = Parse(desc_str, keys, error);
         BOOST_REQUIRE(desc);
-        CheckDescriptor(desc, "mweb(" + xpub + "/1000'/0'/*," + std::to_string(pos) + ")");
+        CheckDescriptor(desc, "mweb(" + xpub + "/0'/100'/*," + std::to_string(pos) + ")");
         CheckDescriptorPrivate(desc, keys, desc_str);
         BOOST_CHECK(desc->GetOutputType() == OutputType::MWEB);
         BOOST_CHECK_EQUAL(desc->IsRange(), false);
 
-        BOOST_REQUIRE(desc->Expand(0, keys, output_scripts, keys, &cache));
-        BOOST_CHECK(output_scripts[0] == keychain->GetStealthAddress(pos));
-        BOOST_REQUIRE(desc->ExpandFromCache(0, cache, output_scripts, keys));
-        BOOST_CHECK(output_scripts[0] == keychain->GetStealthAddress(pos));
+        BOOST_REQUIRE(desc->Expand(0, keys, output_addresses, keys, &cache));
+        BOOST_CHECK(output_addresses[0] == keychain->GetStealthAddress(pos));
+        BOOST_REQUIRE(desc->ExpandFromCache(0, cache, output_addresses, keys));
+        BOOST_CHECK(output_addresses[0] == keychain->GetStealthAddress(pos));
     }
 
     // Constant
 
-    for (int pos = 0; pos < 1000; pos++) {
+    for (int pos = 0; pos < KEY_INDICES_TO_TEST; pos++) {
         StealthAddress mweb_addr = keychain->GetStealthAddress(pos);
-        CPubKey spend_pubkey(mweb_addr.GetSpendPubKey().vec());
         CPubKey scan_pubkey(mweb_addr.GetScanPubKey().vec());
-        desc_str = "mweb(" + HexStr(spend_pubkey) + "," + HexStr(scan_pubkey) + ")";
+        CPubKey spend_pubkey(mweb_addr.GetSpendPubKey().vec());
+        desc_str = "mweb(" + HexStr(scan_pubkey) + "," + HexStr(spend_pubkey) + ")";
         desc = Parse(desc_str, keys, error);
         BOOST_REQUIRE(desc);
         CheckDescriptor(desc, desc_str);
         BOOST_CHECK(!desc->ToPrivateString(keys, error));
         BOOST_CHECK(desc->GetOutputType() == OutputType::MWEB);
         BOOST_CHECK_EQUAL(desc->IsRange(), false);
-        BOOST_REQUIRE(desc->Expand(0, keys, output_scripts, keys, nullptr));
-        BOOST_CHECK(output_scripts[0] == mweb_addr);
+        BOOST_REQUIRE(desc->Expand(0, keys, output_addresses, keys, nullptr));
+        BOOST_CHECK(output_addresses[0] == mweb_addr);
 
         // Inferred
 
@@ -1144,8 +1189,8 @@ BOOST_AUTO_TEST_CASE(mweb_descriptor_test)
         BOOST_CHECK(!desc->ToPrivateString(keys, error));
         BOOST_CHECK(desc->GetOutputType() == OutputType::MWEB);
         BOOST_CHECK_EQUAL(desc->IsRange(), false);
-        BOOST_REQUIRE(desc->Expand(0, keys, output_scripts, keys, nullptr));
-        BOOST_CHECK(output_scripts[0] == mweb_addr);
+        BOOST_REQUIRE(desc->Expand(0, keys, output_addresses, keys, nullptr));
+        BOOST_CHECK(output_addresses[0] == mweb_addr);
     }
 }
 

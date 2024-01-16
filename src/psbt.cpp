@@ -147,7 +147,7 @@ CMutableTransaction PartiallySignedTransaction::GetUnsignedTx() const // MW: TOD
 
             // MW: TODO - If possible, calculate mweb_output_id
             if (!mweb_output.IsFinal()) {
-                LogPrintf("MWEB output is NOT final\n");
+                LogPrintf("DEBUG: MWEB output is NOT final\n");
             }
             mtx.mweb_tx.outputs.push_back(std::move(mweb_output));
         } else {
@@ -624,12 +624,12 @@ void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransactio
 
 void PSBTSignMWEBTx(const SigningProvider& provider, PartiallySignedTransaction& psbtx)
 {
-    LogPrintf("PSBTSignMWEBTx: BEGIN\n");
+    LogPrintf("DEBUG: BEGIN\n");
 
     // Finalize MWEB outputs and kernels
     CMutableTransaction mtx = psbtx.GetUnsignedTx();
 
-    LogPrintf("Inputs(LTC: %llu, MWEB: %llu), Outputs(LTC: %llu, MWEB: %llu), Kernels(MWEB: %llu)\n", mtx.vin.size(), mtx.mweb_tx.inputs.size(), mtx.vout.size(), mtx.mweb_tx.outputs.size(), mtx.mweb_tx.kernels.size());
+    LogPrintf("DEBUG: Inputs(LTC: %llu, MWEB: %llu), Outputs(LTC: %llu, MWEB: %llu), Kernels(MWEB: %llu)\n", mtx.vin.size(), mtx.mweb_tx.inputs.size(), mtx.vout.size(), mtx.mweb_tx.outputs.size(), mtx.mweb_tx.kernels.size());
 
     util::Result<mw::SignTxResult> mweb_result = mw::SignTx(mtx);
     if (mweb_result) {
@@ -702,11 +702,11 @@ void PSBTSignMWEBTx(const SigningProvider& provider, PartiallySignedTransaction&
             }
         }
 
-        psbtx.mweb_tx_offset = mtx.mweb_tx.kernel_offset;
-        psbtx.mweb_stealth_offset = mtx.mweb_tx.stealth_offset;
+        psbtx.mweb_tx_offset = mtx.mweb_tx.kernel_offset.IsZero() ? std::nullopt : std::make_optional(mtx.mweb_tx.kernel_offset);
+        psbtx.mweb_stealth_offset = mtx.mweb_tx.stealth_offset.IsZero() ? std::nullopt : std::make_optional(mtx.mweb_tx.stealth_offset);
     }
 
-    LogPrintf("PSBTSignMWEBTx: END\n");
+    LogPrintf("DEBUG: END\n");
 }
 
 PrecomputedTransactionData PrecomputePSBTData(const PartiallySignedTransaction& psbt)
@@ -730,12 +730,12 @@ PrecomputedTransactionData PrecomputePSBTData(const PartiallySignedTransaction& 
 
 bool SignPSBTInput(const SigningProvider& provider, PartiallySignedTransaction& psbt, int index, const PrecomputedTransactionData* txdata, int sighash,  SignatureData* out_sigdata, bool finalize)
 {
-    LogPrintf("SignPSBTInput - BEGIN\n");
+    LogPrintf("DEBUG: BEGIN\n");
     PSBTInput& input = psbt.inputs.at(index);
     const CMutableTransaction& tx = psbt.GetUnsignedTx();
 
     if (PSBTInputSignedAndVerified(psbt, index, txdata)) {
-        LogPrintf("SignPSBTInput - Already signed and verified\n");
+        LogPrintf("DEBUG: Already signed and verified\n");
         return true;
     }
 
@@ -800,7 +800,7 @@ bool SignPSBTInput(const SigningProvider& provider, PartiallySignedTransaction& 
         out_sigdata->missing_witness_script = sigdata.missing_witness_script;
     }
 
-    LogPrintf("SignPSBTInput - END. sig_complete: %s\n", sig_complete ? "TRUE" : "FALSE");
+    LogPrintf("DEBUG: END. sig_complete: %s\n", sig_complete ? "TRUE" : "FALSE");
     return sig_complete;
 }
 
@@ -856,7 +856,7 @@ util::Result<CMutableTransaction> FinalizePSBT(PartiallySignedTransaction& psbtx
     for (unsigned int i = 0; i < mtx.vin.size(); ++i) {
         mtx.vin[i].scriptSig = psbtx.inputs[i].final_script_sig;
         mtx.vin[i].scriptWitness = psbtx.inputs[i].final_script_witness;
-        LogPrintf("Input(%u): scriptSig=%s, scriptWitness=%s\n", i, HexStr(mtx.vin[i].scriptSig).substr(0, 24), mtx.vin[i].scriptWitness.ToString());
+        LogPrintf("DEBUG: Input(%u): scriptSig=%s, scriptWitness=%s\n", i, HexStr(mtx.vin[i].scriptSig).substr(0, 24), mtx.vin[i].scriptWitness.ToString());
     }
 
     return mtx;
@@ -923,14 +923,14 @@ uint32_t PartiallySignedTransaction::GetVersion() const
 
 void PartiallySignedTransaction::SetupFromTx(const CMutableTransaction& tx)
 {
-    LogPrintf("SetupFromTx() - BEGIN\n");
+    LogPrintf("DEBUG: BEGIN\n");
     tx_version = tx.nVersion;
     fallback_locktime = tx.nLockTime;
 
     size_t num_inputs = tx.vin.size() + tx.mweb_tx.inputs.size();
     size_t num_outputs = tx.vout.size() + tx.mweb_tx.outputs.size();
     size_t num_kernels = tx.mweb_tx.kernels.size();
-    LogPrintf("Inputs(LTC: %llu, MWEB: %llu), Outputs(LTC: %llu, MWEB: %llu), Kernels(MWEB: %llu)\n", tx.vin.size(), tx.mweb_tx.inputs.size(), tx.vout.size(), tx.mweb_tx.outputs.size(), num_kernels);
+    LogPrintf("DEBUG: Inputs(LTC: %llu, MWEB: %llu), Outputs(LTC: %llu, MWEB: %llu), Kernels(MWEB: %llu)\n", tx.vin.size(), tx.mweb_tx.inputs.size(), tx.vout.size(), tx.mweb_tx.outputs.size(), num_kernels);
 
     inputs.resize(num_inputs, PSBTInput(GetVersion()));
     outputs.resize(num_outputs, PSBTOutput(GetVersion()));
@@ -1004,7 +1004,7 @@ void PartiallySignedTransaction::SetupFromTx(const CMutableTransaction& tx)
         psbt_kernel.extra_data = mweb_kernel.extradata;
         psbt_kernel.sig = mweb_kernel.signature;
     }
-    LogPrintf("SetupFromTx() - END\n");
+    LogPrintf("DEBUG: SetupFromTx() - END\n");
 }
 
 void PartiallySignedTransaction::CacheUnsignedTxPieces()

@@ -50,11 +50,11 @@ ExternalSigner ExternalSignerScriptPubKeyMan::GetExternalSigner() {
     return signers[0];
 }
 
-bool ExternalSignerScriptPubKeyMan::DisplayAddress(const CScript scriptPubKey, const ExternalSigner &signer) const
+bool ExternalSignerScriptPubKeyMan::DisplayAddress(const GenericAddress& address, const ExternalSigner &signer) const
 {
     // TODO: avoid the need to infer a descriptor from inside a descriptor wallet
-    auto provider = GetSolvingProvider(scriptPubKey);
-    auto descriptor = InferDescriptor(scriptPubKey, *provider);
+    auto provider = GetSolvingProvider(address);
+    auto descriptor = InferDescriptor(address, *provider);
 
     signer.DisplayAddress(descriptor->ToString());
     // TODO inspect result

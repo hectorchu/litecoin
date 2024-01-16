@@ -45,11 +45,8 @@ static void LOG_F(
 }
 
 // MWEB Logger
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
-#define LOG_TRACE(message, ...) LOG_F(LoggerAPI::LogLevel::TRACE, __FUNCTION__, __LINE__, message, ##__VA_ARGS__)
-#define LOG_DEBUG(message, ...) LOG_F(LoggerAPI::LogLevel::DEBUG, __FUNCTION__, __LINE__, message, ##__VA_ARGS__)
-#define LOG_INFO(message, ...) LOG_F(LoggerAPI::LogLevel::INFO, __FUNCTION__, __LINE__, message, ##__VA_ARGS__)
-#define LOG_WARNING(message, ...) LOG_F(LoggerAPI::LogLevel::WARN, __FUNCTION__, __LINE__, message, ##__VA_ARGS__)
-#define LOG_ERROR(message, ...) LOG_F(LoggerAPI::LogLevel::ERR, __FUNCTION__, __LINE__, message, ##__VA_ARGS__)
-#pragma clang diagnostic pop
+#define LOG_TRACE(...) LOG_F(LoggerAPI::LogLevel::TRACE, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define LOG_DEBUG(...) LOG_F(LoggerAPI::LogLevel::DEBUG, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define LOG_INFO(...) LOG_F(LoggerAPI::LogLevel::INFO, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define LOG_WARNING(...) LOG_F(LoggerAPI::LogLevel::WARN, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define LOG_ERROR(...) LOG_F(LoggerAPI::LogLevel::ERR, __FUNCTION__, __LINE__, ##__VA_ARGS__)

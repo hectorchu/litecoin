@@ -19,7 +19,12 @@ std::unique_ptr<CCoinsViewCursor> CCoinsView::Cursor() const { return nullptr; }
 bool CCoinsView::HaveCoin(const GenericOutputID& output_id) const
 {
     if (output_id.IsMWEB()) {
-        if (!GetMWEBView()) return false;
+        auto mweb_view = GetMWEBView();
+        if (!mweb_view) {
+            LogPrintf("DEBUG: [CCoinsView: 0x%08x]WARNING!! NO MWEB VIEW!\n", (size_t)this);
+            return false;
+        }
+        LogPrintf("DEBUG: Calling HasCoin() for %s\n", output_id.ToString());
         return GetMWEBView()->HasCoin(output_id.ToMWEB());
     } else {
         Coin coin;
@@ -121,15 +126,22 @@ void CCoinsViewCache::EmplaceCoinInternalDANGER(COutPoint&& outpoint, Coin&& coi
 
 void AddCoins(CCoinsViewCache& cache, const CTransaction &tx, int nHeight, bool check_for_overwrite) {
     bool fCoinbase = tx.IsCoinBase();
-    const uint256& txid = tx.GetHash();
-    for (size_t i = 0; i < tx.vout.size(); ++i) {
+    size_t i = 0;
+    for (const GenericOutput& output : tx.GetOutputs()) {
         // MWEB: The first output in the HogEx transaction is the HogAddr.
         // The HogAddr is always spent in the next HogEx, so should not be subjected to pegout maturity rules.
         bool fPegout = tx.IsHogEx() && i > 0;
-        bool overwrite = check_for_overwrite ? cache.HaveCoin(COutPoint(txid, i)) : fCoinbase;
+
         // Coinbase transactions can always be overwritten, in order to correctly
         // deal with the pre-BIP30 occurrences of duplicate coinbase transactions.
-        cache.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, fCoinbase, fPegout), overwrite);
+        bool overwrite = check_for_overwrite ? cache.HaveCoin(output.GetID()) : fCoinbase;
+
+        if (output.IsMWEB()) {
+            // MW: TODO - Do we need to support AddCoin?
+        } else {
+            cache.AddCoin(output.ToOutPoint(), Coin(output.GetTxOut(), nHeight, fCoinbase, fPegout), overwrite);
+        }
+        ++i;
     }
 }
 
@@ -301,13 +313,15 @@ bool CCoinsViewCache::Flush() {
 
 void CCoinsViewCache::Uncache(const GenericOutputID& output_id)
 {
+    LogPrintf("DEBUG: Uncaching %s\n", output_id.ToString());
     if (output_id.IsOutPoint()) {
-        CCoinsMap::iterator it = cacheCoins.find(output_id.ToOutPoint());
+        const COutPoint& outpoint = output_id.ToOutPoint();
+        CCoinsMap::iterator it = cacheCoins.find(outpoint);
         if (it != cacheCoins.end() && it->second.flags == 0) {
             cachedCoinsUsage -= it->second.coin.DynamicMemoryUsage();
             TRACE5(utxocache, uncache,
-                   hash.hash.data(),
-                   (uint32_t)hash.n,
+                   outpoint.hash.data(),
+                   (uint32_t)outpoint.n,
                    (uint32_t)it->second.coin.nHeight,
                    (int64_t)it->second.coin.out.nValue,
                    (bool)it->second.coin.IsCoinBase());
@@ -325,6 +339,7 @@ bool CCoinsViewCache::HaveInputs(const CTransaction& tx) const
     if (!tx.IsCoinBase()) {
         for (const GenericInput& input : tx.GetInputs()) {
             if (!HaveCoin(input.GetID())) {
+                LogPrintf("DEBUG: [0x%08x] HaveInputs: %s is missing\n", (size_t)this, input.ToString());
                 return false;
             }
         }

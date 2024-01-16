@@ -53,7 +53,9 @@ public:
     std::pair<CWalletTx*, CMutableTransaction> AddTx(
         const std::vector<CRecipient>& recipients,
         const std::vector<GenericWalletUTXO>& select_coins,
-        std::optional<CTxDestination> change_address)
+        std::optional<CTxDestination> change_address,
+        const std::optional<int32_t>& nVersion = std::nullopt,
+        const std::optional<uint32_t>& nLockTime = std::nullopt)
     {
         CCoinControl coin_control;
         if (!select_coins.empty()) {
@@ -65,7 +67,7 @@ public:
             coin_control.destChange = *change_address;
         }
 
-        auto res = TxBuilder::New(m_wallet, coin_control, recipients, recipients.size())->Build(true);
+        auto res = TxBuilder::New(m_wallet, coin_control, recipients, recipients.size())->Build(nVersion, nLockTime, true);
         BOOST_REQUIRE(res);
         auto tx = MakeTransactionRef(res->tx);
         m_wallet.CommitTransaction(tx, {}, {});

@@ -7,6 +7,7 @@
 
 #include <primitives/transaction.h>
 #include <qt/sendcoinsrecipient.h>
+#include <interfaces/wallet.h>
 
 #include <consensus/amount.h>
 
@@ -36,7 +37,7 @@ public:
 
     CAmount getTotalTransactionAmount() const;
 
-    void reassignAmounts(int nChangePosRet); // needed for the subtract-fee-from-amount feature
+    void reassignAmounts(interfaces::Wallet& wallet, int nChangePosRet); // needed for the subtract-fee-from-amount feature
 
 private:
     QList<SendCoinsRecipient> recipients;

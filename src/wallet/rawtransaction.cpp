@@ -26,6 +26,7 @@ RawTransaction RawTransaction::FromRPC(const UniValue& inputs_in, const UniValue
         int64_t nLockTime = locktime.getInt<int64_t>();
         if (nLockTime < 0 || nLockTime > LOCKTIME_MAX)
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, locktime out of range");
+        LogPrintf("DEBUG: Setting locktime to %lld\n", nLockTime);
         rawTx.tx.nLockTime = nLockTime;
     }
 
@@ -58,6 +59,7 @@ RawTransaction RawTransaction::FromRPC(const UniValue& inputs_in, const UniValue
         } else {
             nSequence = CTxIn::SEQUENCE_FINAL;
         }
+        LogPrintf("DEBUG: Setting input sequence to 0x%08x\n", nSequence);
 
         // set the sequence number if passed in the parameters object
         const UniValue& sequenceObj = find_value(o, "sequence");
@@ -175,30 +177,48 @@ FundTransactionResult RawTransaction::FundTransaction(CWallet& wallet, const int
     }
 
     std::vector<CRecipient> recipients = BuildRecipients(setSubtractFeeFromOutputs);
-    auto res = CreateTransaction(wallet, recipients, nChangePosIn, coinControl, false);
+    LogPrintf("DEBUG: Calling CreateTransaction with nLockTime=%lld\n", tx.nLockTime);
+    auto res = CreateTransaction(wallet, recipients, nChangePosIn, coinControl, tx.nVersion, tx.nLockTime, false);
     if (!res) {
         throw JSONRPCError(RPC_WALLET_ERROR, util::ErrorString(res).original);
     }
-    const auto& txr = *res;
-    tx = txr.tx;
+
+    tx.mweb_tx = res->tx.mweb_tx;
+    tx.vout = res->tx.vout;
+
+    //if (res->change_pos.IsLTC()) {
+    //    size_t change_position = res->change_pos.ToLTC();
+    //    tx.vout.insert(tx.vout.begin() + change_position, res->tx.vout[change_position]);
+    //} else if (res->change_pos.IsMWEB()) {
+    //    size_t change_position = res->change_pos.ToMWEB().idx;
+    //    tx.mweb_tx.outputs.insert(tx.mweb_tx.outputs.begin() + change_position, res->tx.mweb_tx.outputs[change_position]);
+    //}
+
+    // Copy output sizes from new transaction; they may have had the fee
+    // subtracted from them.
+    //for (unsigned int idx = 0; idx < tx.vout.size(); idx++) {
+    //    tx.vout[idx].nValue = res->tx.vout[idx].nValue;
+    //}
+    //for (size_t idx = 0; idx < tx.mweb_tx.outputs.size(); idx++) {
+    //    tx.mweb_tx.outputs[idx].amount = res->tx.mweb_tx.outputs[idx].amount;
+    //}
 
     // Add new txins while keeping original txin scriptSig/order.
-    for (const GenericInput& tx_input : tx.GetInputs()) {
-        //if (!coinControl.IsSelected(tx_input.GetID())) {
-        //    if (tx_input.IsMWEB()) {
-        //        mw::MutableInput mweb_input(tx_input.ToMWEB());
-        //        // MW: TODO - Finish populating mweb_input
-        //        tx.mweb_tx.inputs.push_back(std::move(mweb_input));
-        //    } else {
-        //        tx.vin.push_back(tx_input.GetTxIn());
-        //    }
-        //}
+    for (const GenericInput& tx_input : res->tx.GetInputs()) {
+        if (!coinControl.IsSelected(tx_input.GetID())) {
+            if (tx_input.IsMWEB()) {
+                //tx.mweb_tx.inputs.push_back(mw::MutableInput(tx_input.ToMWEB()));
+            } else {
+                tx.vin.push_back(tx_input.GetTxIn());
+            }
+        }
+
         if (lockUnspents) {
             wallet.LockCoin(tx_input.GetID());
         }
     }
 
-    return FundTransactionResult{txr.fee, txr.change_pos};
+    return FundTransactionResult{res->fee, res->change_pos};
 }
 
 RawTransaction RawTransaction::FromHex(const std::string& hex, const bool try_no_witness, const bool try_witness)
@@ -252,6 +272,11 @@ PartiallySignedTransaction RawTransaction::ToPSBT(const CWallet& wallet) const
 {
     // Make a blank psbt
     PartiallySignedTransaction psbtx(tx, 2);
+
+    // DEBUG
+    uint32_t nLockTime{0};
+    bool computed = psbtx.ComputeTimeLock(nLockTime);
+    LogPrintf("DEBUG: RawTransaction::ToPSBT() - psbtx has fallback_locktime=%s, ComputeTimeLock() %s with nLockTime=%llu\n", psbtx.fallback_locktime.has_value() ? std::to_string(psbtx.fallback_locktime.value()) : "NONE", computed ? "SUCCEEDED" : "FAILED", nLockTime);
 
     // First fill transaction with our data without signing,
     // so external signers are not asked sign more than once.

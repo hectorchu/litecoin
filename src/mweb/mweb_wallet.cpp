@@ -97,7 +97,7 @@ bool Wallet::GetStealthAddress(const uint32_t index, StealthAddress& address) co
         return false;
     }
 
-    if (keychain->GetSpendSecret().IsNull()) {
+    if (!keychain->HasSpendPubKey()) {
         return false;
     }
 

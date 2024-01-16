@@ -169,7 +169,7 @@ KeyOriginInfo DeserializeKeyOrigin(Stream& s, uint64_t length)
     for (unsigned int i = 4; i < length; i += sizeof(uint32_t)) {
         uint32_t index;
         s >> index;
-        hd_keypath.path.push_back(index);
+        hd_keypath.hdkeypath.path.push_back(index);
     }
     return hd_keypath;
 }
@@ -207,20 +207,20 @@ void DeserializeHDKeypaths(Stream& s, const std::vector<unsigned char>& key, std
 
 // Serialize a KeyOriginInfo to a stream
 template<typename Stream>
-void SerializeKeyOrigin(Stream& s, KeyOriginInfo hd_keypath)
+void SerializeKeyOrigin(Stream& s, KeyOriginInfo key_origin)
 {
-    s << hd_keypath.fingerprint;
-    for (const auto& path : hd_keypath.path) {
+    s << key_origin.fingerprint;
+    for (const auto& path : key_origin.hdkeypath.path) {
         s << path;
     }
 }
 
 // Serialize a length prefixed KeyOriginInfo to a stream
 template<typename Stream>
-void SerializeHDKeypath(Stream& s, KeyOriginInfo hd_keypath)
+void SerializeHDKeypath(Stream& s, KeyOriginInfo key_origin)
 {
-    WriteCompactSize(s, (hd_keypath.path.size() + 1) * sizeof(uint32_t));
-    SerializeKeyOrigin(s, hd_keypath);
+    WriteCompactSize(s, (key_origin.hdkeypath.path.size() + 1) * sizeof(uint32_t));
+    SerializeKeyOrigin(s, key_origin);
 }
 
 // Serialize HD keypaths to a stream from a map

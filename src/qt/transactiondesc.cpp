@@ -11,7 +11,6 @@
 #include <qt/bitcoinunits.h>
 #include <qt/guiutil.h>
 #include <qt/paymentserver.h>
-#include <qt/transactionrecord.h>
 
 #include <consensus/consensus.h>
 #include <interfaces/node.h>
@@ -21,6 +20,7 @@
 #include <util/system.h>
 #include <validation.h>
 #include <wallet/ismine.h>
+#include <wallet/txrecord.h>
 
 #include <stdint.h>
 #include <string>
@@ -103,13 +103,13 @@ bool GetPaymentRequestMerchant(const std::string& pr, QString& merchant)
     return false;
 }
 
-QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wallet, TransactionRecord* rec, BitcoinUnit unit)
+QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wallet, wallet::WalletTxRecord* rec, BitcoinUnit unit)
 {
     interfaces::WalletTxStatus status;
     interfaces::WalletOrderForm orderForm;
     bool inMempool;
     int numBlocks;
-    interfaces::WalletTx wtx = wallet.getWalletTxDetails(rec->hash, status, orderForm, inMempool, numBlocks);
+    interfaces::WalletTx wtx = wallet.getWalletTxDetails(rec->GetTxHash(), status, orderForm, inMempool, numBlocks);
 
     QString strHTML;
 
@@ -131,14 +131,14 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
     if (wtx.value_map.count("comment") && !wtx.value_map["comment"].empty())
         strHTML += "<br><b>" + tr("Comment") + ":</b><br>" + GUIUtil::HtmlEscape(wtx.value_map["comment"], true) + "<br>";
 
-    strHTML += "<b>" + tr("Transaction ID") + ":</b> " + rec->getTxHash() + "<br>";
+    strHTML += "<b>" + tr("Transaction ID") + ":</b> " + QString::fromStdString(rec->GetTxHash().ToString()) + "<br>";
     strHTML += "<b>" + tr("Transaction total size") + ":</b> " + QString::number(wtx.tx->GetTotalSize()) + " bytes<br>";
     strHTML += "<b>" + tr("Transaction virtual size") + ":</b> " + QString::number(GetVirtualTransactionSize(*wtx.tx)) + " bytes<br>";
     if (wtx.tx->HasMWEBTx()) {
         strHTML += "<b>" + tr("Transaction MWEB weight") + ":</b> " + QString::number(wtx.tx->mweb_tx.GetMWEBWeight()) + "<br>";
     }
 
-    strHTML += "<b>" + tr("Output index") + ":</b> " + QString::number(rec->getOutputIndex()) + "<br>";
+    strHTML += "<b>" + tr("Component index") + ":</b> " + QString::fromStdString(rec->GetComponentIndex()) + "<br>";
 
     strHTML += toHTML_OrderForm(orderForm);
 
@@ -160,7 +160,7 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
     return strHTML;
 }
 
-QString TransactionDesc::toHTML_Addresses(interfaces::Wallet& wallet, const interfaces::WalletTx& wtx, TransactionRecord* rec)
+QString TransactionDesc::toHTML_Addresses(interfaces::Wallet& wallet, const interfaces::WalletTx& wtx, wallet::WalletTxRecord* rec)
 {
     QString strHTML;
 
@@ -393,7 +393,7 @@ QString TransactionDesc::toHTML_OrderForm(const interfaces::WalletOrderForm& ord
     return strHTML;
 }
 
-QString TransactionDesc::toHTML_Debug(interfaces::Node& node, interfaces::Wallet& wallet, const interfaces::WalletTx& wtx, TransactionRecord* rec, BitcoinUnit unit)
+QString TransactionDesc::toHTML_Debug(interfaces::Node& node, interfaces::Wallet& wallet, const interfaces::WalletTx& wtx, wallet::WalletTxRecord* rec, BitcoinUnit unit)
 {
     QString strHTML = "<hr><br>" + tr("Debug information") + "<br><br>";
     for (const interfaces::WalletTxIn& wtxin : wtx.inputs) {

@@ -48,7 +48,7 @@ class MWEBWalletBasicTest(LitecoinTestFramework):
         assert node1.getbalances()['mine']['trusted'] == 0
         
         self.log.info("Mine the next block")
-        self.generate(node0, 1, sync_fun=self.sync_blocks)
+        self.generate(node0, 1, sync_fun=self.sync_all)
         
         self.log.info("Verify node1's wallet lists the transaction as confirmed")
         n1_addr_coins = node1.listunspent(addresses=[n1_addr])
@@ -63,6 +63,7 @@ class MWEBWalletBasicTest(LitecoinTestFramework):
         assert_equal(n0_tx1['confirmations'], 1)
         assert n0_tx1['amount'] == -25
         assert n0_tx1['fee'] < 0 and n0_tx1['fee'] > -0.1
+        self.sync_all()
 
         #
         # Pegout to node2
@@ -92,7 +93,7 @@ class MWEBWalletBasicTest(LitecoinTestFramework):
         tx3_id = node1.sendtoaddress(address=n2_addr2, amount=5, subtractfeefromamount=True)
         self.sync_mempools()
         
-        n1_tx3 = node1.gettransaction(txid=tx3_id)
+        n1_tx3 = node1.gettransaction(txid=tx3_id, verbose=True)
         assert_equal(n1_tx3['confirmations'], 0)
         assert n1_tx3['amount'] > -5 and n1_tx3['amount'] < -4.9
         assert n1_tx3['fee'] < 0 and n1_tx3['fee'] > -0.1
@@ -105,7 +106,7 @@ class MWEBWalletBasicTest(LitecoinTestFramework):
         assert tx3_id in node1.getrawmempool()
 
         self.log.info("Mine next block to make sure the transactions confirm successfully")
-        self.generate(node0, 1, sync_fun=self.sync_all)
+        block_id = self.generate(node0, 1, sync_fun=self.sync_all)
         assert tx2_id not in node1.getrawmempool()
         assert tx3_id not in node1.getrawmempool()        
 

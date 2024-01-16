@@ -73,7 +73,7 @@ BOOST_AUTO_TEST_CASE(psbt_updater_test)
 
 BOOST_AUTO_TEST_CASE(parse_hd_keypath)
 {
-    std::vector<uint32_t> keypath;
+    HDKeyPath keypath;
 
     BOOST_CHECK(ParseHDKeypath("1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1", keypath));
     BOOST_CHECK(!ParseHDKeypath("///////////////////////////", keypath));

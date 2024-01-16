@@ -15,16 +15,25 @@ namespace wallet {
 class CRecipients;
 class CWallet;
 
+struct MWEBChangePosition
+{
+    // The position of the change output in the MWEB outputs vector.
+    size_t idx;
+
+    //! The hash will only be populated for signed transactions.
+    std::optional<mw::Hash> hash;
+};
+
 struct ChangePosition
 {
-    std::optional<std::variant<size_t, mw::Hash>> position;
+    std::optional<std::variant<size_t, MWEBChangePosition>> position;
 
     ChangePosition() = default;
     ChangePosition(const size_t i) : position(std::make_optional(i)) {}
-    ChangePosition(mw::Hash id) : position(std::make_optional(std::move(id))) {}
+    ChangePosition(MWEBChangePosition mweb_pos) : position(std::make_optional(std::move(mweb_pos))) {}
 
     bool operator==(const size_t i) const noexcept { return IsLTC() && ToLTC() == i; }
-    bool operator==(const mw::Hash& id) const noexcept { return IsMWEB() && ToMWEB() == id; }
+    bool operator==(const mw::Hash& id) const noexcept { return IsMWEB() && ToMWEB().hash == id; }
 
     void SetNull() noexcept { position = std::nullopt; }
     bool IsNull() const noexcept { return !position.has_value(); }
@@ -35,11 +44,11 @@ struct ChangePosition
         assert(IsLTC());
         return std::get<size_t>(*position);
     }
-    bool IsMWEB() const noexcept { return position.has_value() && std::holds_alternative<mw::Hash>(*position); }
-    const mw::Hash& ToMWEB() const noexcept
+    bool IsMWEB() const noexcept { return position.has_value() && std::holds_alternative<MWEBChangePosition>(*position); }
+    const MWEBChangePosition& ToMWEB() const noexcept
     {
         assert(IsMWEB());
-        return std::get<mw::Hash>(*position);
+        return std::get<MWEBChangePosition>(*position);
     }
 };
 
