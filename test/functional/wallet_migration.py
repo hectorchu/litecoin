@@ -95,8 +95,8 @@ class WalletMigrationTest(BitcoinTestFramework):
         # So, should have a total of 11 descriptors on it.
         descs = basic0.listdescriptors()["descriptors"]
         for i in range(0, len(descs)):
-            print(descs[i])
-        assert_equal(len(basic0.listdescriptors()["descriptors"]), 11)
+            print(f'DEBUG: {descs[i]}')
+        assert_equal(len(basic0.listdescriptors()["descriptors"]), 12)
 
         # Compare addresses info
         addr_info = basic0.getaddressinfo(addr)

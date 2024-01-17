@@ -30,7 +30,7 @@ class InactiveHDChainsTest(BitcoinTestFramework):
     def setup_nodes(self):
         self.add_nodes(self.num_nodes, extra_args=self.extra_args, versions=[
             None,
-            170100, # 0.17.2 Does not have the key metadata upgrade
+            170100, # 0.17.1 Does not have the key metadata upgrade
         ])
 
         self.start_nodes()

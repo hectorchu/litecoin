@@ -803,16 +803,16 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         // So for now, we don't generate a new seed.
         // 
         // If we are using descriptors, make new descriptors with a new seed
-        if (IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) && !IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
-            SetupDescriptorScriptPubKeyMans();
-        } else if (auto spk_man = GetLegacyScriptPubKeyMan()) {
-            // if we are using HD, replace the HD seed with a new one
-            if (spk_man->IsHDEnabled()) {
-                if (!spk_man->SetupGeneration(true)) {
-                    return false;
-                }
-            }
-        }
+        //if (IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS) && !IsWalletFlagSet(WALLET_FLAG_BLANK_WALLET)) {
+        //    SetupDescriptorScriptPubKeyMans();
+        //} else if (auto spk_man = GetLegacyScriptPubKeyMan()) {
+        //    // if we are using HD, replace the HD seed with a new one
+        //    if (spk_man->IsHDEnabled()) {
+        //        if (!spk_man->SetupGeneration(true)) {
+        //            return false;
+        //        }
+        //    }
+        //}
         Lock();
 
         // Need to completely rewrite the wallet file; if we don't, bdb might keep
@@ -2359,13 +2359,13 @@ TransactionError CWallet::FillPSBT(PartiallySignedTransaction& psbtx, bool& comp
         }
     }
 
-    LogPrintf("FillPSBT - Precomputing PSBT data\n");
+    LogPrintf("DEBUG: Precomputing PSBT data\n");
     const PrecomputedTransactionData txdata = PrecomputePSBTData(psbtx);
 
     // Fill in information from ScriptPubKeyMans
     for (ScriptPubKeyMan* spk_man : GetAllScriptPubKeyMans()) {
         int n_signed_this_spkm = 0;
-        LogPrintf("FillPSBT - Calling spkman->FillPSBT\n");
+        LogPrintf("DEBUG: Calling spkman->FillPSBT\n");
         TransactionError res = spk_man->FillPSBT(psbtx, txdata, sighash_type, sign, bip32derivs, &n_signed_this_spkm, finalize);
         if (res != TransactionError::OK) {
             return res;
@@ -2376,14 +2376,14 @@ TransactionError CWallet::FillPSBT(PartiallySignedTransaction& psbtx, bool& comp
         }
     }
 
-    LogPrintf("FillPSBT - Dropping non-witness\n");
+    LogPrintf("DEBUG: Dropping non-witness\n");
 
     RemoveUnnecessaryTransactions(psbtx, sighash_type);
 
     // Complete if every input is now signed
     complete = psbtx.IsComplete();
 
-    LogPrintf("FillPSBT - Complete: %d\n", complete ? 1 : 0);
+    LogPrintf("DEBUG: Complete: %d\n", complete ? 1 : 0);
 
     return TransactionError::OK;
 }
@@ -2755,14 +2755,14 @@ std::set<std::string> CWallet::ListAddrBookLabels(const std::string& purpose) co
 
 bool CWallet::DisplayAddress(const CTxDestination& dest)
 {
-    CScript scriptPubKey = GetScriptForDestination(dest);
-    for (const auto& spk_man : GetScriptPubKeyMans(GenericAddress(scriptPubKey))) {
+    GenericAddress address(dest);
+    for (const auto& spk_man : GetScriptPubKeyMans(address)) {
         auto signer_spk_man = dynamic_cast<ExternalSignerScriptPubKeyMan *>(spk_man);
         if (signer_spk_man == nullptr) {
             continue;
         }
         ExternalSigner signer = ExternalSignerScriptPubKeyMan::GetExternalSigner();
-        return signer_spk_man->DisplayAddress(scriptPubKey, signer);
+        return signer_spk_man->DisplayAddress(address, signer);
     }
     return false;
 }
@@ -3624,17 +3624,17 @@ ScriptPubKeyMan* CWallet::GetScriptPubKeyMan(const uint256& id) const
     return nullptr;
 }
 
-std::unique_ptr<SigningProvider> CWallet::GetSolvingProvider(const CScript& script) const
+std::unique_ptr<SigningProvider> CWallet::GetSolvingProvider(const GenericAddress& address) const
 {
     SignatureData sigdata;
-    return GetSolvingProvider(script, sigdata);
+    return GetSolvingProvider(address, sigdata);
 }
 
-std::unique_ptr<SigningProvider> CWallet::GetSolvingProvider(const CScript& script, SignatureData& sigdata) const
+std::unique_ptr<SigningProvider> CWallet::GetSolvingProvider(const GenericAddress& address, SignatureData& sigdata) const
 {
     for (const auto& spk_man_pair : m_spk_managers) {
-        if (spk_man_pair.second->CanProvide(script, sigdata)) {
-            return spk_man_pair.second->GetSolvingProvider(script);
+        if (spk_man_pair.second->CanProvide(address, sigdata)) {
+            return spk_man_pair.second->GetSolvingProvider(address);
         }
     }
     return nullptr;

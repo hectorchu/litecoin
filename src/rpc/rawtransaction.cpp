@@ -1055,7 +1055,7 @@ static RPCHelpMan decodepsbt()
             UniValue keypath(UniValue::VOBJ);
             keypath.pushKV("xpub", EncodeBase58Check(ser_xpub));
             keypath.pushKV("master_fingerprint", HexStr(Span<unsigned char>(xpub_pair.first.fingerprint, xpub_pair.first.fingerprint + 4)));
-            keypath.pushKV("path", WriteHDKeypath(xpub_pair.first.path));
+            keypath.pushKV("path", WriteHDKeypath(xpub_pair.first.hdkeypath));
             global_xpubs.push_back(keypath);
         }
     }
@@ -1178,7 +1178,7 @@ static RPCHelpMan decodepsbt()
                 keypath.pushKV("pubkey", HexStr(entry.first));
 
                 keypath.pushKV("master_fingerprint", strprintf("%08x", ReadBE32(entry.second.fingerprint)));
-                keypath.pushKV("path", WriteHDKeypath(entry.second.path));
+                keypath.pushKV("path", WriteHDKeypath(entry.second.hdkeypath));
                 keypaths.push_back(keypath);
             }
             in.pushKV("bip32_derivs", keypaths);
@@ -1299,7 +1299,7 @@ static RPCHelpMan decodepsbt()
                 UniValue path_obj(UniValue::VOBJ);
                 path_obj.pushKV("pubkey", HexStr(xonly));
                 path_obj.pushKV("master_fingerprint", strprintf("%08x", ReadBE32(origin.fingerprint)));
-                path_obj.pushKV("path", WriteHDKeypath(origin.path));
+                path_obj.pushKV("path", WriteHDKeypath(origin.hdkeypath));
                 UniValue leaf_hashes_arr(UniValue::VARR);
                 for (const auto& leaf_hash : leaf_hashes) {
                     leaf_hashes_arr.push_back(HexStr(leaf_hash));
@@ -1372,7 +1372,7 @@ static RPCHelpMan decodepsbt()
                 UniValue keypath(UniValue::VOBJ);
                 keypath.pushKV("pubkey", HexStr(entry.first));
                 keypath.pushKV("master_fingerprint", strprintf("%08x", ReadBE32(entry.second.fingerprint)));
-                keypath.pushKV("path", WriteHDKeypath(entry.second.path));
+                keypath.pushKV("path", WriteHDKeypath(entry.second.hdkeypath));
                 keypaths.push_back(keypath);
             }
             out.pushKV("bip32_derivs", keypaths);
@@ -1416,7 +1416,7 @@ static RPCHelpMan decodepsbt()
                 UniValue path_obj(UniValue::VOBJ);
                 path_obj.pushKV("pubkey", HexStr(xonly));
                 path_obj.pushKV("master_fingerprint", strprintf("%08x", ReadBE32(origin.fingerprint)));
-                path_obj.pushKV("path", WriteHDKeypath(origin.path));
+                path_obj.pushKV("path", WriteHDKeypath(origin.hdkeypath));
                 UniValue leaf_hashes_arr(UniValue::VARR);
                 for (const auto& leaf_hash : leaf_hashes) {
                     leaf_hashes_arr.push_back(HexStr(leaf_hash));

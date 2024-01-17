@@ -18,6 +18,11 @@ public:
         return m_scan == rhs.m_scan && m_spend == rhs.m_spend;
     }
 
+    bool operator!=(const StealthAddress& rhs) const noexcept
+    {
+        return !(*this == rhs);
+    }
+
     bool operator<(const StealthAddress& rhs) const noexcept
     {
         if (m_scan < rhs.m_scan) return true;

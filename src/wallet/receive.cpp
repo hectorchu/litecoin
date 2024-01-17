@@ -63,10 +63,10 @@ CAmount TxGetCredit(const CWallet& wallet, const CWalletTx& wtx, const isminefil
         }
     }
 
-    if (!has_my_inputs) {
+    if (!has_my_inputs) { // MW: TODO - Why does this have to be false?
         for (const PegOutCoin& pegout : wtx.tx->mweb_tx.GetPegOuts()) {
             LOCK(wallet.cs_wallet);
-            if (!(wallet.IsMine(pegout.GetScriptPubKey()) & filter)) {
+            if (wallet.IsMine(pegout.GetScriptPubKey()) & filter) {
                 nCredit += pegout.GetAmount();
                 if (!MoneyRange(nCredit))
                     throw std::runtime_error(std::string(__func__) + ": value out of range");
@@ -75,6 +75,20 @@ CAmount TxGetCredit(const CWallet& wallet, const CWalletTx& wtx, const isminefil
     }
 
     return nCredit;
+}
+
+bool AddressIsChange(const CWallet& wallet, const GenericAddress& address)
+{
+    AssertLockHeld(wallet.cs_wallet);
+    if (wallet.IsMine(address)) {
+        if (address.IsMWEB()) {
+            // MW: TODO - Figure out the best way to determine this
+        } else {
+            return ScriptIsChange(wallet, address.GetScript());
+        }
+    }
+
+    return false;
 }
 
 bool ScriptIsChange(const CWallet& wallet, const CScript& script)
@@ -99,7 +113,7 @@ bool ScriptIsChange(const CWallet& wallet, const CScript& script)
     return false;
 }
 
-bool OutputIsChange(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_id)
+bool OutputIsChange(const CWallet& wallet, const CTransactionRef& tx, const GenericOutputID& output_id)
 {
     AssertLockHeld(wallet.cs_wallet);
     if (output_id.IsMWEB()) {
@@ -111,7 +125,7 @@ bool OutputIsChange(const CWallet& wallet, const CWalletTx& wtx, const GenericOu
         return false;
     }
 
-    return ScriptIsChange(wallet, wtx.tx->vout[output_id.ToOutPoint().n].scriptPubKey);
+    return ScriptIsChange(wallet, tx->vout[output_id.ToOutPoint().n].scriptPubKey);
 }
 
 CAmount OutputGetChange(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_id)
@@ -120,7 +134,7 @@ CAmount OutputGetChange(const CWallet& wallet, const CWalletTx& wtx, const Gener
     const CAmount amount = wallet.GetValue(wtx, output_id);
     if (!MoneyRange(amount))
         throw std::runtime_error(std::string(__func__) + ": value out of range");
-    return (OutputIsChange(wallet, wtx, output_id) ? amount : 0);
+    return (OutputIsChange(wallet, wtx.tx, output_id) ? amount : 0);
 }
 
 CAmount TxGetChange(const CWallet& wallet, const CWalletTx& wtx)
@@ -168,6 +182,7 @@ CAmount CachedTxGetCredit(const CWallet& wallet, const CWalletTx& wtx, const ism
     if (get_amount_filter) {
         // GetBalance can assume transactions in mapWallet won't change
         credit += GetCachableAmount(wallet, wtx, CWalletTx::CREDIT, get_amount_filter);
+        LogPrintf("wtx: %s, amount filter: %d, credit: %lld\n", wtx.GetHash().GetHex(), (int)get_amount_filter, credit);
     }
     return credit;
 }
@@ -306,7 +321,7 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
         //   2) the output is to us (received)
         if (nDebit > 0)
         {
-            if (!include_change && OutputIsChange(wallet, wtx, output_id))
+            if (!include_change && OutputIsChange(wallet, wtx.tx, output_id))
                 continue;
         }
         else if (!(fIsMine & filter))
@@ -335,20 +350,20 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
 
     // MWEB: Treat pegouts as outputs
     for (const PegOutCoin& pegout : wtx.tx->mweb_tx.GetPegOuts()) {
-        GenericAddress dest_addr(pegout.GetScriptPubKey());
-        isminetype fIsMine = wallet.IsMine(pegout.GetScriptPubKey());
+        const CScript& pegout_script = pegout.GetScriptPubKey();
+        isminetype fIsMine = wallet.IsMine(pegout_script);
         // Only need to handle txouts if AT LEAST one of these is true:
         //   1) they debit from us (sent)
         //   2) the output is to us (received)
         if (nDebit > 0) {
             // Don't report 'change' txouts
-            if (ScriptIsChange(wallet, pegout.GetScriptPubKey()))
+            if (ScriptIsChange(wallet, pegout_script))
                 continue;
         } else if (!(fIsMine & filter))
             continue;
 
         CTxDestination address;
-        dest_addr.ExtractDestination(address);
+        ExtractDestination(pegout_script, address);
 
         COutputEntry output = {address, pegout.GetAmount(), mw::Hash()}; // MW: TODO - GenericOutputID?
 
@@ -506,7 +521,7 @@ std::set< std::set<CTxDestination> > GetAddressGroupings(const CWallet& wallet)
             if (any_mine)
             {
                 for (const GenericOutputID& output_id : wtx.GetOutputIDs(true)) {
-                    if (OutputIsChange(wallet, wtx, output_id)) {
+                    if (OutputIsChange(wallet, wtx.tx, output_id)) {
                         CTxDestination address;
                         if (!wallet.ExtractOutputDestination(wtx, output_id, address))
                             continue;

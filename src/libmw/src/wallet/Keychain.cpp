@@ -55,7 +55,7 @@ bool Keychain::RewindOutput(const mw::Output& output, mw::Coin& coin) const
 
     // v0.21.2 incorrectly generated MWEB keys from the pre-split keypool for upgraded wallets.
     // These keys will not have an mweb_index, so we set the address_index as CUSTOM_KEY.
-    coin.address_index = pMetadata->key_origin.mweb_index.value_or(CUSTOM_KEY);
+    coin.address_index = pMetadata->key_origin.hdkeypath.mweb_index.value_or(CUSTOM_KEY);
     coin.blind = std::make_optional(mask.GetRawBlind());
     coin.amount = value;
     coin.output_id = output.GetOutputID();
@@ -108,9 +108,13 @@ std::optional<SecretKey> Keychain::CalculateOutputKey(const mw::Coin& coin) cons
 
 StealthAddress Keychain::GetStealthAddress(const uint32_t index) const
 {
-    assert(!m_spendSecret.IsNull());
+    assert(HasSpendPubKey());
 
-    PublicKey Bi = PublicKey::From(GetSpendKey(index));
+    SecretKey mi = Hasher(EHashTag::ADDRESS)
+        .Append<uint32_t>(index)
+        .Append(m_scanSecret)
+        .hash();
+    PublicKey Bi = m_spendPubkey->Add(mi);
     PublicKey Ai = Bi.Mul(m_scanSecret);
 
     return StealthAddress(Ai, Bi);
@@ -118,14 +122,14 @@ StealthAddress Keychain::GetStealthAddress(const uint32_t index) const
 
 SecretKey Keychain::GetSpendKey(const uint32_t index) const
 {
-    assert(!m_spendSecret.IsNull());
+    assert(HasSpendSecret());
 
     SecretKey mi = Hasher(EHashTag::ADDRESS)
         .Append<uint32_t>(index)
         .Append(m_scanSecret)
         .hash();
 
-    return SecretKeys::From(m_spendSecret).Add(mi).Total();
+    return SecretKeys::From(*m_spendSecret).Add(mi).Total();
 }
 
 END_NAMESPACE

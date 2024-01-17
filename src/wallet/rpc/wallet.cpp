@@ -823,6 +823,7 @@ RPCHelpMan signmessage();
 RPCHelpMan listreceivedbyaddress();
 RPCHelpMan listreceivedbylabel();
 RPCHelpMan listtransactions();
+RPCHelpMan listwallettransactions();
 RPCHelpMan listsinceblock();
 RPCHelpMan gettransaction();
 RPCHelpMan abandontransaction();
@@ -874,6 +875,7 @@ Span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &listunspent},
         {"wallet", &listwalletdir},
         {"wallet", &listwallets},
+        {"wallet", &listwallettransactions},
         {"wallet", &loadwallet},
         {"wallet", &lockunspent},
         {"wallet", &migratewallet},

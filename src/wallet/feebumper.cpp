@@ -246,7 +246,7 @@ Result CreateRateBumpTransaction(CWallet& wallet, const uint256& txid, const CCo
             return Result::INVALID_ADDRESS_OR_KEY;
         }
 
-        if (!OutputIsChange(wallet, wtx, output_id)) {
+        if (!OutputIsChange(wallet, wtx.tx, output_id)) {
             CRecipient recipient = {dest_addr, wallet.GetValue(wtx, output_id), false};
             recipients.push_back(recipient);
         } else {
@@ -292,7 +292,7 @@ Result CreateRateBumpTransaction(CWallet& wallet, const uint256& txid, const CCo
     new_coin_control.m_min_depth = 1;
 
     constexpr int RANDOM_CHANGE_POSITION = -1;
-    auto res = CreateTransaction(wallet, recipients, RANDOM_CHANGE_POSITION, new_coin_control, false);
+    auto res = CreateTransaction(wallet, recipients, RANDOM_CHANGE_POSITION, new_coin_control, std::nullopt, std::nullopt, false);
     if (!res) {
         errors.push_back(Untranslated("Unable to create transaction.") + Untranslated(" ") + util::ErrorString(res));
         return Result::WALLET_ERROR;

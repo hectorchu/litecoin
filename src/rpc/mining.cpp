@@ -171,6 +171,10 @@ static bool getScriptFromDescriptor(const std::string& descriptor, CScript& scri
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Ranged descriptor not accepted. Maybe pass through deriveaddresses first?");
         }
 
+        if (desc->IsMWEB()) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot mine to an MWEB address");
+        }
+
         FlatSigningProvider provider;
         std::vector<GenericAddress> scripts;
         if (!desc->Expand(0, key_provider, scripts, provider)) {
@@ -179,11 +183,6 @@ static bool getScriptFromDescriptor(const std::string& descriptor, CScript& scri
 
         // Combo descriptors can have 2 or 4 scripts, so we can't just check scripts.size() == 1
         CHECK_NONFATAL(scripts.size() > 0 && scripts.size() <= 4);
-
-        // MW: TODO - Remove this once we support MWEB descriptors
-        for (const GenericAddress& script : scripts) {
-            CHECK_NONFATAL(!script.IsMWEB());
-        }
 
         if (scripts.size() == 1) {
             script = scripts.at(0).GetScript();

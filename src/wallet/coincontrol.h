@@ -72,19 +72,19 @@ public:
         return (setSelected.size() > 0);
     }
 
-    bool IsSelected(const GenericOutputID& output_idx) const
+    bool IsSelected(const GenericOutputID& output_id) const
     {
-        return (setSelected.count(output_idx) > 0);
+        return (setSelected.count(output_id) > 0);
     }
 
-    bool IsExternalSelected(const GenericOutputID& output_idx) const
+    bool IsExternalSelected(const GenericOutputID& output_id) const
     {
-        return (m_external_outputs.count(output_idx) > 0);
+        return (m_external_outputs.count(output_id) > 0);
     }
 
-    bool GetExternalOutput(const GenericOutputID& output_idx, GenericOutput& output) const
+    bool GetExternalOutput(const GenericOutputID& output_id, GenericOutput& output) const
     {
-        const auto ext_it = m_external_outputs.find(output_idx);
+        const auto ext_it = m_external_outputs.find(output_id);
         if (ext_it == m_external_outputs.end()) {
             return false;
         }
@@ -92,20 +92,20 @@ public:
         return true;
     }
 
-    void Select(const GenericOutputID& output_idx)
+    void Select(const GenericOutputID& output_id)
     {
-        setSelected.insert(output_idx);
+        setSelected.insert(output_id);
     }
 
-    void SelectExternal(const GenericOutputID& output_idx, const GenericOutput& output)
+    void SelectExternal(const GenericOutputID& output_id, const GenericOutput& output)
     {
-        setSelected.insert(output_idx);
-        m_external_outputs.emplace(output_idx, output);
+        setSelected.insert(output_id);
+        m_external_outputs.emplace(output_id, output);
     }
 
-    void UnSelect(const GenericOutputID& output_idx)
+    void UnSelect(const GenericOutputID& output_id)
     {
-        setSelected.erase(output_idx);
+        setSelected.erase(output_id);
     }
 
     void UnSelectAll()
@@ -118,19 +118,19 @@ public:
         vOutpoints.assign(setSelected.begin(), setSelected.end());
     }
 
-    void SetInputWeight(const GenericOutputID& output_idx, int64_t weight)
+    void SetInputWeight(const GenericOutputID& output_id, int64_t weight)
     {
-        m_input_weights[output_idx] = weight;
+        m_input_weights[output_id] = weight;
     }
 
-    bool HasInputWeight(const GenericOutputID& output_idx) const
+    bool HasInputWeight(const GenericOutputID& output_id) const
     {
-        return m_input_weights.count(output_idx) > 0;
+        return m_input_weights.count(output_id) > 0;
     }
 
-    int64_t GetInputWeight(const GenericOutputID& output_idx) const
+    int64_t GetInputWeight(const GenericOutputID& output_id) const
     {
-        auto it = m_input_weights.find(output_idx);
+        auto it = m_input_weights.find(output_id);
         assert(it != m_input_weights.end());
         return it->second;
     }

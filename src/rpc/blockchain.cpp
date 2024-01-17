@@ -215,7 +215,7 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
 
     result.pushKV("tx", txs);
 
-    bool txDetails = (verbosity == TxVerbosity::SHOW_DETAILS || verbosity == TxVerbosity::SHOW_DETAILS_AND_PREVOUT); // MW: TODO - Use a switch case statemnt like above
+    bool txDetails = (verbosity == TxVerbosity::SHOW_DETAILS || verbosity == TxVerbosity::SHOW_DETAILS_AND_PREVOUT); // MW: TODO - Use a switch case statement like above
 
     if (!block.mweb_block.IsNull()) {
         UniValue mweb_block(UniValue::VOBJ);
@@ -629,6 +629,20 @@ static RPCHelpMan getblockheader()
                             {RPCResult::Type::NUM, "difficulty", "The difficulty"},
                             {RPCResult::Type::STR_HEX, "chainwork", "Expected number of hashes required to produce the current chain"},
                             {RPCResult::Type::NUM, "nTx", "The number of transactions in the block"},
+                            {RPCResult::Type::OBJ, "mweb_header", /*optional=*/true, "The MWEB header",
+                            {
+                                {RPCResult::Type::STR_HEX, "hash", "the MWEB block hash"},
+                                {RPCResult::Type::NUM, "height", "The block height or index"},
+                                {RPCResult::Type::STR_HEX, "kernel_offset", "Total accumulated sum of kernel offsets of all MWEB blocks up to and including this one"},
+                                {RPCResult::Type::STR_HEX, "stealth_offset", "The stealth blinding factor for only this MWEB block"},
+                                {RPCResult::Type::NUM, "num_kernels", "The number of kernels in this MWEB block"},
+                                {RPCResult::Type::NUM, "num_txos", "Total accumulated number of TXOs included in all MWEB blocks up to and including this one"},
+                                {RPCResult::Type::STR_HEX, "kernel_root", "MMR root of all kernels in this MWEB block"},
+                                {RPCResult::Type::STR_HEX, "output_root", "PMMR commitment of TXOs included in all MWEB blocks up to and including this one"},
+                                {RPCResult::Type::STR_HEX, "leaf_root", "PMMR commitment of \"spentness\" bit of the TXOs in the output PMMR"},
+                            }},
+                            {RPCResult::Type::NUM, "mweb_amount", /*optional=*/true, "The total number of coins pegged into the MWEB"},
+                            {RPCResult::Type::NUM, "prev_mweb_amount", /*optional=*/true, "The previous block's mweb_amount"},
                             {RPCResult::Type::STR_HEX, "previousblockhash", /*optional=*/true, "The hash of the previous block (if available)"},
                             {RPCResult::Type::STR_HEX, "nextblockhash", /*optional=*/true, "The hash of the next block (if available)"},
                         }},

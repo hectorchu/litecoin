@@ -584,12 +584,12 @@ public:
 class DescriptorScriptPubKeyMan : public ScriptPubKeyMan
 {
 private:
-    using ScriptPubKeyMap = std::map<GenericAddress, int32_t>; // Map of scripts to descriptor range index
+    using AddressMap = std::map<GenericAddress, int32_t>; // Map of addresses to descriptor range index
     using PubKeyMap = std::map<CPubKey, int32_t>; // Map of pubkeys involved in scripts to descriptor range index
     using CryptedKeyMap = std::map<CKeyID, std::pair<CPubKey, std::vector<unsigned char>>>;
     using KeyMap = std::map<CKeyID, CKey>;
 
-    ScriptPubKeyMap m_map_script_pub_keys GUARDED_BY(cs_desc_man);
+    AddressMap m_map_addresses GUARDED_BY(cs_desc_man);
     PubKeyMap m_map_pubkeys GUARDED_BY(cs_desc_man);
     int32_t m_max_cached_index = -1;
 
@@ -635,7 +635,7 @@ public:
     util::Result<CTxDestination> GetReservedDestination(const OutputType type, bool internal, int64_t& index, CKeyPool& keypool) override;
     void ReturnDestination(int64_t index, const KeyPurpose purpose, const CTxDestination& addr) override;
 
-    // Tops up the descriptor cache and m_map_script_pub_keys. The cache is stored in the wallet file
+    // Tops up the descriptor cache and m_map_addresses. The cache is stored in the wallet file
     // and is used to expand the descriptor in GetNewDestination. DescriptorScriptPubKeyMan relies
     // more on ephemeral data than LegacyScriptPubKeyMan. For wallets using unhardened derivation
     // (with or without private keys), the "keypool" is a single xpub.

@@ -101,7 +101,7 @@ public:
     uint32_t nInternalChainCounter;
     uint32_t nMWEBIndexCounter;
     CKeyID seed_id; //!< seed hash160
-    std::optional<SecretKey> mweb_scan_key;
+    std::optional<SecretKey> mweb_scan_key;  // MW: TODO - Also include spend_pubkey
     int64_t m_next_external_index{0}; // Next index in the keypool to be used. Memory only.
     int64_t m_next_internal_index{0}; // Next index in the keypool to be used. Memory only.
     int64_t m_next_mweb_index{0}; // Next index in the keypool to be used. Memory only.
@@ -182,16 +182,16 @@ public:
         KeyOriginInfo origin_info;
         if (obj.nVersion >= VERSION_WITH_KEY_ORIGIN) {
             SER_WRITE(obj, std::copy(obj.key_origin.fingerprint, obj.key_origin.fingerprint + sizeof(origin_info.fingerprint), origin_info.fingerprint));
-            SER_WRITE(obj, origin_info.path = obj.key_origin.path);
-            READWRITE(origin_info.fingerprint, origin_info.path, obj.has_key_origin);
+            SER_WRITE(obj, origin_info.hdkeypath.path = obj.key_origin.hdkeypath.path);
+            READWRITE(origin_info.fingerprint, origin_info.hdkeypath.path, obj.has_key_origin);
             SER_READ(obj, std::copy(origin_info.fingerprint, origin_info.fingerprint + sizeof(origin_info.fingerprint), obj.key_origin.fingerprint));
-            SER_READ(obj, obj.key_origin.path = origin_info.path);
+            SER_READ(obj, obj.key_origin.hdkeypath.path = origin_info.hdkeypath.path);
         }
         
         if (obj.nVersion >= VERSION_WITH_MWEB_INDEX) {
-            SER_WRITE(obj, origin_info.mweb_index = obj.key_origin.mweb_index);
-            READWRITE(origin_info.mweb_index);
-            SER_READ(obj, obj.key_origin.mweb_index = origin_info.mweb_index);
+            SER_WRITE(obj, origin_info.hdkeypath.mweb_index = obj.key_origin.hdkeypath.mweb_index);
+            READWRITE(origin_info.hdkeypath.mweb_index);
+            SER_READ(obj, obj.key_origin.hdkeypath.mweb_index = origin_info.hdkeypath.mweb_index);
         }
     }
 
@@ -288,6 +288,9 @@ public:
     bool WriteDescriptorDerivedCache(const CExtPubKey& xpub, const uint256& desc_id, uint32_t key_exp_index, uint32_t der_index);
     bool WriteDescriptorParentCache(const CExtPubKey& xpub, const uint256& desc_id, uint32_t key_exp_index);
     bool WriteDescriptorLastHardenedCache(const CExtPubKey& xpub, const uint256& desc_id, uint32_t key_exp_index);
+    bool WriteDescriptorMWEBScanKeyCache(const uint256& desc_id, const SecretKey& scan_key);
+    bool WriteDescriptorMWEBSpendPubKeyCache(const uint256& desc_id, const PublicKey& spend_pubkey);
+    bool WriteDescriptorMWEBAddressCache(const uint256& desc_id, const uint32_t idx, const StealthAddress& address);
     bool WriteDescriptorCacheItems(const uint256& desc_id, const DescriptorCache& cache);
 
     bool WriteLockedUTXO(const GenericOutputID& output);

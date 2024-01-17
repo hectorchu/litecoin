@@ -499,6 +499,8 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/spend.cpp \
   wallet/transaction.cpp \
   wallet/txbuilder.cpp \
+  wallet/txlist.cpp \
+  wallet/txrecord.cpp \
   wallet/wallet.cpp \
   wallet/walletdb.cpp \
   wallet/walletutil.cpp \

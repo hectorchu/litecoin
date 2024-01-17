@@ -1519,6 +1519,7 @@ void PeerManagerImpl::ReattemptInitialBroadcast(CScheduler& scheduler)
         if (tx != nullptr) {
             RelayTransaction(txid, tx->GetWitnessHash());
         } else {
+            LogPrintf("ReattemptInitialBraodcast: Removing transaction %s\n", txid.GetHex());
             m_mempool.RemoveUnbroadcastTx(txid, true);
         }
     }
@@ -2530,9 +2531,9 @@ void PeerManagerImpl::ProcessGetData(CNode& pfrom, Peer& peer, const std::atomic
         CTransactionRef tx = FindTxForGetData(pfrom, ToGenTxid(inv), mempool_req, now);
         if (tx) {
             // WTX and WITNESS_TX imply we serialize with witness
-            int nSendFlags = (inv.IsMsgTx() ? SERIALIZE_TRANSACTION_NO_WITNESS | SERIALIZE_NO_MWEB : 0);
-            nSendFlags = (inv.IsMsgWtx() ? (CanServeMWEB(peer) ? 0 : SERIALIZE_NO_MWEB) : nSendFlags);
-            LogPrintf("Send flags: %d\n", nSendFlags);
+            int nSendFlags = (inv.IsMsgTx() ? SERIALIZE_TRANSACTION_NO_WITNESS | SERIALIZE_NO_MWEB : (CanServeMWEB(peer) ? 0 : SERIALIZE_NO_MWEB));
+            LogPrintf("DEBUG: Send flags: %d, CanServeMWEB: %s, inv: %s, type: 0x%04x\n", nSendFlags, CanServeMWEB(peer) ? "TRUE" : "FALSE", inv.ToString(), inv.type);
+            LogPrint(BCLog::NET, "DEBUG: Sending TX: %s\n", tx->ToString());
             m_connman.PushMessage(&pfrom, msgMaker.Make(nSendFlags, NetMsgType::TX, *tx));
             m_mempool.RemoveUnbroadcastTx(tx->GetHash());
             // As we're going to send tx, make sure its unconfirmed parents are made requestable.
@@ -3428,6 +3429,7 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
         bool fRelay = true;
 
         vRecv >> nVersion >> Using<CustomUintFormatter<8>>(nServices) >> nTime;
+        LogPrintf("DEBUG: Version message from peer=%d, nVersion=%d, nServices=0x%08x\n", pfrom.GetId(), nVersion, (uint64_t)nServices);
         if (nTime < 0) {
             nTime = 0;
         }
@@ -4167,6 +4169,7 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
         // is not considered a protocol violation, so don't punish the peer.
         if (m_chainman.ActiveChainstate().IsInitialBlockDownload()) return;
 
+        LogPrint(BCLog::NET, "serialized tx: %s\n", HexStr(vRecv));
         CTransactionRef ptx;
         vRecv >> ptx;
         const CTransaction& tx = *ptx;
@@ -4705,6 +4708,7 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
             return;
         }
 
+        LogPrint(BCLog::NET, "serialized block: %s\n", HexStr(vRecv));
         std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
         vRecv >> *pblock;
 
@@ -5844,7 +5848,9 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                     // especially since we have many peers and some will draw much shorter delays.
                     unsigned int nRelayedTransactions = 0;
                     LOCK(tx_relay->m_bloom_filter_mutex);
-                    while (!vInvTx.empty() && nRelayedTransactions < INVENTORY_BROADCAST_MAX) {
+                    size_t broadcast_max{INVENTORY_BROADCAST_MAX + (tx_relay->m_tx_inventory_to_send.size() / 1000) * 5};
+                    broadcast_max = std::min<size_t>(1000, broadcast_max);
+                    while (!vInvTx.empty() && nRelayedTransactions < broadcast_max) {
                         // Fetch the top element from the heap
                         std::pop_heap(vInvTx.begin(), vInvTx.end(), compareInvMempoolOrder);
                         std::set<uint256>::iterator it = vInvTx.back();

@@ -20,8 +20,9 @@ bool AllInputsMine(const CWallet& wallet, const CWalletTx& wtx, const isminefilt
 CAmount OutputGetCredit(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_id, const isminefilter& filter);
 CAmount TxGetCredit(const CWallet& wallet, const CWalletTx& wtx, const isminefilter& filter);
 
+bool AddressIsChange(const CWallet& wallet, const GenericAddress& address) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
 bool ScriptIsChange(const CWallet& wallet, const CScript& script) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
-bool OutputIsChange(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_id) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
+bool OutputIsChange(const CWallet& wallet, const CTransactionRef& tx, const GenericOutputID& output_id) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
 CAmount OutputGetChange(const CWallet& wallet, const CWalletTx& wtx, const GenericOutputID& output_id) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
 CAmount TxGetChange(const CWallet& wallet, const CWalletTx& wtx);
 

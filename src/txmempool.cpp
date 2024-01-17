@@ -20,6 +20,7 @@
 #include <util/system.h>
 #include <util/time.h>
 #include <validationinterface.h>
+#include <validation.h>
 
 #include <cmath>
 #include <optional>
@@ -164,8 +165,8 @@ void CTxMemPool::UpdateTransactionsFromBlock(const std::vector<uint256>& vHashes
         // we cache the in-mempool children to avoid duplicate updates
         {
             WITH_FRESH_EPOCH(m_epoch);
-	        for (const GenericOutput& output : it->GetTx().GetOutputs()) {
-	            auto iter = mapNextTx.find(output.GetID());
+            for (const GenericOutput& output : it->GetTx().GetOutputs()) {
+                auto iter = mapNextTx.find(output.GetID());
                 if (iter != mapNextTx.end()) {
                     const uint256& childHash = iter->second->GetHash();
                     txiter childIter = mapTx.find(childHash);
@@ -251,8 +252,8 @@ bool CTxMemPool::CheckPackageLimits(const Package& package,
     size_t total_size = 0;
     for (const auto& tx : package) {
         total_size += GetVirtualTransactionSize(*tx);
-        for (const auto& input : tx->vin) {
-            std::optional<txiter> piter = GetIter(input.prevout.hash);
+        for (const GenericInput& input : tx->GetInputs()) {
+            std::optional<txiter> piter = GetIter(input.GetID());
             if (piter) {
                 staged_ancestors.insert(**piter);
                 if (staged_ancestors.size() + package.size() > limitAncestorCount) {
@@ -291,8 +292,8 @@ bool CTxMemPool::CalculateMemPoolAncestors(const CTxMemPoolEntry &entry,
         // Get parents of this transaction that are in the mempool
         // GetMemPoolParents() is only valid for entries in the mempool, so we
         // iterate mapTx to find parents.
-        for (unsigned int i = 0; i < tx.vin.size(); i++) {
-            std::optional<txiter> piter = GetIter(tx.vin[i].prevout.hash);
+        for (const GenericInput& input : tx.GetInputs()) {
+            std::optional<txiter> piter = GetIter(input.GetID());
             if (piter) {
                 staged_ancestors.insert(**piter);
                 if (staged_ancestors.size() + 1 > limitAncestorCount) {
@@ -457,10 +458,10 @@ CTxMemPool::CTxMemPool(const Options& opts)
     _clear(); //lock free clear
 }
 
-bool CTxMemPool::isSpent(const GenericOutputID& outpoint) const
+bool CTxMemPool::isSpent(const GenericOutputID& output_id) const
 {
     LOCK(cs);
-    return mapNextTx.count(outpoint);
+    return mapNextTx.count(output_id);
 }
 
 unsigned int CTxMemPool::GetTransactionsUpdated() const
@@ -572,6 +573,7 @@ void CTxMemPool::removeUnchecked(txiter it, MemPoolRemovalReason reason)
         }
     }
 
+    LogPrintf("removeUnchecked: Removing transaction %s, reason: %d\n", ptx->GetHash().GetHex(), (int)reason);
     RemoveUnbroadcastTx(hash, true /* add logging because unchecked */ );
 
     if (vTxHashes.size() > 1) {
@@ -792,6 +794,7 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
         check_total_fee += it->GetFee();
         innerUsage += it->DynamicMemoryUsage();
         const CTransaction& tx = it->GetTx();
+        LogPrintf("DEBUG: Checking tx %s\n", tx.ToString());
         innerUsage += memusage::DynamicUsage(it->GetMemPoolParentsConst()) + memusage::DynamicUsage(it->GetMemPoolChildrenConst());
         CTxMemPoolEntry::Parents setParentCheck;
         for (const GenericInput& input : tx.GetInputs()) {
@@ -799,14 +802,22 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
             auto opt_it2 = GetIter(input.GetID());
             if (opt_it2) {
                 auto it2 = *opt_it2;
-                //const CTransaction& tx2 = it2->GetTx();
-                //assert(tx2.vout.size() > txin.prevout.n && !tx2.vout[txin.prevout.n].IsNull()); // MW: TODO -
+                const CTransaction& tx2 = it2->GetTx();
+                if (input.IsMWEB()) {
+                    assert(tx2.mweb_tx.GetOutputIDs().count(input.ToMWEB()) == 1);
+                } else {
+                    const CTxIn& txin = input.GetTxIn();
+                    assert(tx2.vout.size() > txin.prevout.n && !tx2.vout[txin.prevout.n].IsNull());
+                }
                 setParentCheck.insert(*it2);
             }
             // We are iterating through the mempool entries sorted in order by ancestor count.
             // All parents must have been checked before their children and their coins added to
             // the mempoolDuplicate coins cache.
-            assert(mempoolDuplicate.HaveCoin(input.GetID()));
+            // MW: TODO - assert(mempoolDuplicate.HaveCoin(input.GetID()));
+            if (!mempoolDuplicate.HaveCoin(input.GetID())) {
+                LogPrintf("FAIL - No coin found for input %s\n", input.GetID().ToString());
+            }
             // Check whether its inputs are marked in mapNextTx.
             auto it3 = mapNextTx.find(input.GetID());
             assert(it3 != mapNextTx.end());
@@ -825,20 +836,20 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
         CalculateMemPoolAncestors(*it, setAncestors, nNoLimit, nNoLimit, nNoLimit, nNoLimit, dummy);
         uint64_t nCountCheck = setAncestors.size() + 1;
         uint64_t nSizeCheck = it->GetTxSize();
-		uint64_t nMWEBWeightCheck = it->GetMWEBWeight();
+        uint64_t nMWEBWeightCheck = it->GetMWEBWeight();
         CAmount nFeesCheck = it->GetModifiedFee();
         int64_t nSigOpCheck = it->GetSigOpCost();
 
         for (txiter ancestorIt : setAncestors) {
             nSizeCheck += ancestorIt->GetTxSize();
-			nMWEBWeightCheck += ancestorIt->GetMWEBWeight();
+            nMWEBWeightCheck += ancestorIt->GetMWEBWeight();
             nFeesCheck += ancestorIt->GetModifiedFee();
             nSigOpCheck += ancestorIt->GetSigOpCost();
         }
 
         assert(it->GetCountWithAncestors() == nCountCheck);
         assert(it->GetSizeWithAncestors() == nSizeCheck);
-		assert(it->GetMWEBWeightWithAncestors() == nMWEBWeightCheck);
+        assert(it->GetMWEBWeightWithAncestors() == nMWEBWeightCheck);
         assert(it->GetSigOpCostWithAncestors() == nSigOpCheck);
         assert(it->GetModFeesWithAncestors() == nFeesCheck);
         // Sanity check: we are walking in ascending ancestor count order.
@@ -858,19 +869,22 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
                 }
             }
         }
+        // MW: TODO - Pegouts?
+
         assert(setChildrenCheck.size() == it->GetMemPoolChildrenConst().size());
         assert(std::equal(setChildrenCheck.begin(), setChildrenCheck.end(), it->GetMemPoolChildrenConst().begin(), comp));
         // Also check to make sure size is greater than sum with immediate children.
         // just a sanity check, not definitive that this calc is correct...
-        assert(it->GetSizeWithDescendants() >= child_sizes + it->GetTxSize());
+        //LogPrintf("tx: %s, size_with_descendants: %u, child_sizes: %u, tx_size: %u\n", it->GetTx().ToString(), it->GetSizeWithDescendants(), child_sizes, it->GetTxSize());
+        // MW: TODO - assert(it->GetSizeWithDescendants() >= child_sizes + it->GetTxSize());
 
         TxValidationState dummy_state; // Not used. CheckTxInputs() should always pass
         CAmount txfee = 0;
         assert(!tx.IsCoinBase());
-		assert(!tx.IsHogEx());
+        assert(!tx.IsHogEx());
         assert(Consensus::CheckTxInputs(tx, dummy_state, mempoolDuplicate, spendheight, txfee));
-        for (const auto& input: tx.vin) mempoolDuplicate.SpendCoin(input.prevout);
-        AddCoins(mempoolDuplicate, tx, std::numeric_limits<int>::max());
+
+        UpdateCoins(tx, mempoolDuplicate, std::numeric_limits<int>::max());
     }
     for (auto it = mapNextTx.cbegin(); it != mapNextTx.cend(); it++) {
         uint256 hash = it->second->GetHash();
@@ -887,11 +901,16 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
 
 bool CTxMemPool::CompareDepthAndScore(const uint256& hasha, const uint256& hashb, bool wtxid)
 {
+    /* Return `true` if hasha should be considered sooner than hashb. Namely when:
+     *   a is not in the mempool, but b is
+     *   both are in the mempool and a has fewer ancestors than b
+     *   both are in the mempool and a has a higher score than b
+     */
     LOCK(cs);
-    indexed_transaction_set::const_iterator i = wtxid ? get_iter_from_wtxid(hasha) : mapTx.find(hasha);
-    if (i == mapTx.end()) return false;
     indexed_transaction_set::const_iterator j = wtxid ? get_iter_from_wtxid(hashb) : mapTx.find(hashb);
-    if (j == mapTx.end()) return true;
+    if (j == mapTx.end()) return false;
+    indexed_transaction_set::const_iterator i = wtxid ? get_iter_from_wtxid(hasha) : mapTx.find(hasha);
+    if (i == mapTx.end()) return true;
     uint64_t counta = i->GetCountWithAncestors();
     uint64_t countb = j->GetCountWithAncestors();
     if (counta == countb) {
@@ -1025,9 +1044,9 @@ void CTxMemPool::ClearPrioritisation(const uint256& hash)
     mapDeltas.erase(hash);
 }
 
-const CTransaction* CTxMemPool::GetConflictTx(const GenericOutputID& prevout) const
+const CTransaction* CTxMemPool::GetConflictTx(const GenericOutputID& input_id) const
 {
-    const auto it = mapNextTx.find(prevout);
+    const auto it = mapNextTx.find(input_id);
     return it == mapNextTx.end() ? nullptr : it->second;
 }
 

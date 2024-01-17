@@ -56,6 +56,9 @@ const std::string VERSION{"version"};
 const std::string WALLETDESCRIPTOR{"walletdescriptor"};
 const std::string WALLETDESCRIPTORCACHE{"walletdescriptorcache"};
 const std::string WALLETDESCRIPTORLHCACHE{"walletdescriptorlhcache"};
+const std::string WALLETDESCRIPTORMWEBSCANKEYCACHE{"walletdescriptormwebscankeycache"};
+const std::string WALLETDESCRIPTORMWEBSPENDPUBKEYCACHE{"walletdescriptormwebspendpubkeycache"};
+const std::string WALLETDESCRIPTORMWEBADDRESSCACHE{"walletdescriptormwebaddresscache"};
 const std::string WALLETDESCRIPTORCKEY{"walletdescriptorckey"};
 const std::string WALLETDESCRIPTORKEY{"walletdescriptorkey"};
 const std::string WATCHMETA{"watchmeta"};
@@ -278,6 +281,21 @@ bool WalletBatch::WriteDescriptorLastHardenedCache(const CExtPubKey& xpub, const
     return WriteIC(std::make_pair(std::make_pair(DBKeys::WALLETDESCRIPTORLHCACHE, desc_id), key_exp_index), ser_xpub);
 }
 
+bool WalletBatch::WriteDescriptorMWEBScanKeyCache(const uint256& desc_id, const SecretKey& scan_key)
+{
+    return WriteIC(std::make_pair(DBKeys::WALLETDESCRIPTORMWEBSCANKEYCACHE, desc_id), scan_key);
+}
+
+bool WalletBatch::WriteDescriptorMWEBSpendPubKeyCache(const uint256& desc_id, const PublicKey& spend_pubkey)
+{
+    return WriteIC(std::make_pair(DBKeys::WALLETDESCRIPTORMWEBSPENDPUBKEYCACHE, desc_id), spend_pubkey);
+}
+
+bool WalletBatch::WriteDescriptorMWEBAddressCache(const uint256& desc_id, const uint32_t idx, const StealthAddress& address)
+{
+    return WriteIC(std::make_pair(std::make_pair(DBKeys::WALLETDESCRIPTORMWEBADDRESSCACHE, desc_id), idx), address);
+}
+
 bool WalletBatch::WriteDescriptorCacheItems(const uint256& desc_id, const DescriptorCache& cache)
 {
     for (const auto& parent_xpub_pair : cache.GetCachedParentExtPubKeys()) {
@@ -297,6 +315,24 @@ bool WalletBatch::WriteDescriptorCacheItems(const uint256& desc_id, const Descri
             return false;
         }
     }
+    std::optional<SecretKey> scan_key = cache.GetCachedMWEBScanKey();
+    if (scan_key) {
+        if (!WriteDescriptorMWEBScanKeyCache(desc_id, *scan_key)) {
+            return false;
+        }
+    }
+    std::optional<PublicKey> spend_pubkey = cache.GetCachedMWEBSpendPubKey();
+    if (spend_pubkey) {
+        if (!WriteDescriptorMWEBSpendPubKeyCache(desc_id, *spend_pubkey)) {
+            return false;
+        }
+    }
+    for (const auto& idx_mweb_address_pair : cache.GetCachedMWEBAddresses()) {
+        if (!WriteDescriptorMWEBAddressCache(desc_id, idx_mweb_address_pair.first, idx_mweb_address_pair.second)) {
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -581,14 +617,14 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                 // See https://github.com/bitcoin/bitcoin/pull/12924
                 bool internal = false;
                 uint32_t index = 0;
-                if (keyMeta.hdKeypath != "s" && keyMeta.hdKeypath != "m" && !keyMeta.key_origin.mweb_index) { // MW: TODO - Handle parsing of Keypaths here
-                    std::vector<uint32_t> path;
+                if (keyMeta.hdKeypath != "s" && keyMeta.hdKeypath != "m" && !keyMeta.key_origin.hdkeypath.mweb_index) { // MW: TODO - Handle parsing of Keypaths here
+                    HDKeyPath hdkeypath;
                     if (keyMeta.has_key_origin) {
                         // We have a key origin, so pull it from its path vector
-                        path = keyMeta.key_origin.path;
+                        hdkeypath = keyMeta.key_origin.hdkeypath;
                     } else {
                         // No key origin, have to parse the string
-                        if (!ParseHDKeypath(keyMeta.hdKeypath, path)) {
+                        if (!ParseHDKeypath(keyMeta.hdKeypath, hdkeypath)) {
                             strErr = "Error reading wallet database: keymeta with invalid HD keypath";
                             return false;
                         }
@@ -598,24 +634,24 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                     // Path string is m/0'/k'/i'
                     // Path vector is [0', k', i'] (but as ints OR'd with the hardened bit
                     // k == 0 for external, 1 for internal. i is the index
-                    if (path.size() != 3) {
+                    if (hdkeypath.path.size() != 3) {
                         strErr = "Error reading wallet database: keymeta found with unexpected path";
                         return false;
                     }
-                    if (path[0] != 0x80000000) {
-                        strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000) for the element at index 0", path[0]);
+                    if (hdkeypath.path[0] != 0x80000000) {
+                        strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000) for the element at index 0", hdkeypath.path[0]);
                         return false;
                     }
-                    if (path[1] != 0x80000000 && path[1] != (1 | 0x80000000) && path[1] != (100 | 0x80000000)) {
-                        strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000 or 0x80000001) for the element at index 1", path[1]);
+                    if (hdkeypath.path[1] != 0x80000000 && hdkeypath.path[1] != (1 | 0x80000000) && hdkeypath.path[1] != (100 | 0x80000000)) {
+                        strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000 or 0x80000001) for the element at index 1", hdkeypath.path[1]);
                         return false;
                     }
-                    if ((path[2] & 0x80000000) == 0) {
-                        strErr = strprintf("Unexpected path index of 0x%08x (expected to be greater than or equal to 0x80000000)", path[2]);
+                    if ((hdkeypath.path[2] & 0x80000000) == 0) {
+                        strErr = strprintf("Unexpected path index of 0x%08x (expected to be greater than or equal to 0x80000000)", hdkeypath.path[2]);
                         return false;
                     }
-                    internal = path[1] == (1 | 0x80000000);
-                    index = path[2] & ~0x80000000;
+                    internal = hdkeypath.path[1] == (1 | 0x80000000);
+                    index = hdkeypath.path[2] & ~0x80000000;
                 }
 
                 // Insert a new CHDChain, or get the one that already exists
@@ -627,9 +663,9 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                     chain.seed_id = keyMeta.hd_seed_id;
                 }
 
-                if (!!keyMeta.key_origin.mweb_index) {
+                if (!!keyMeta.key_origin.hdkeypath.mweb_index) {
                     chain.nVersion = std::max(chain.nVersion, CHDChain::VERSION_HD_MWEB_WATCH);
-                    chain.nMWEBIndexCounter = std::max(chain.nMWEBIndexCounter, *keyMeta.key_origin.mweb_index + 1);
+                    chain.nMWEBIndexCounter = std::max(chain.nMWEBIndexCounter, *keyMeta.key_origin.hdkeypath.mweb_index + 1);
                 } else if (internal) {
                     chain.nVersion = std::max(chain.nVersion, CHDChain::VERSION_HD_CHAIN_SPLIT);
                     chain.nInternalChainCounter = std::max(chain.nInternalChainCounter, index + 1);
@@ -702,9 +738,11 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             uint256 id;
             ssKey >> id;
             WalletDescriptor desc;
+            std::string desc_hex = HexStr(Span<std::byte>(ssValue.data(), ssValue.size()));
             try {
                 ssValue >> desc;
             } catch (const std::ios_base::failure& e) {
+                LogPrintf("DEBUG: Failed to load descriptor: %s\n", desc_hex);
                 strErr = e.what();
                 wss.descriptor_unknown = true;
                 return false;
@@ -785,6 +823,32 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                 return false;
             }
             wss.m_descriptor_keys.insert(std::make_pair(std::make_pair(desc_id, pubkey.GetID()), key));
+        } else if (strType == DBKeys::WALLETDESCRIPTORMWEBSCANKEYCACHE) {
+            uint256 desc_id;
+            ssKey >> desc_id;
+
+            SecretKey scan_key;
+            ssValue >> scan_key;
+
+            wss.m_descriptor_caches[desc_id].CacheMWEBMasterScanKey(scan_key);
+        } else if (strType == DBKeys::WALLETDESCRIPTORMWEBSPENDPUBKEYCACHE) {
+            uint256 desc_id;
+            ssKey >> desc_id;
+
+            PublicKey spend_pubkey;
+            ssValue >> spend_pubkey;
+
+            wss.m_descriptor_caches[desc_id].CacheMWEBMasterSpendPubKey(spend_pubkey);
+        } else if (strType == DBKeys::WALLETDESCRIPTORMWEBADDRESSCACHE) {
+            uint256 desc_id;
+            ssKey >> desc_id;
+            uint32_t mweb_index;
+            ssKey >> mweb_index;
+
+            StealthAddress mweb_address;
+            ssValue >> mweb_address;
+
+            wss.m_descriptor_caches[desc_id].CacheMWEBAddress(mweb_index, mweb_address);
         } else if (strType == DBKeys::WALLETDESCRIPTORCKEY) {
             uint256 desc_id;
             CPubKey pubkey;
@@ -905,6 +969,8 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
             std::string strType, strErr;
             if (!ReadKeyValue(pwallet, ssKey, ssValue, wss, strType, strErr))
             {
+                LogPrintf("DEBUG: Failed to read record of type %s\n", strType);
+
                 // losing keys is considered a catastrophic error, anything else
                 // we assume the user can live with:
                 if (IsKeyType(strType) || strType == DBKeys::DEFAULTKEY) {
@@ -936,6 +1002,7 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
                 pwallet->WalletLogPrintf("%s\n", strErr);
         }
     } catch (...) {
+        LogPrintf("DEBUG: Corruption detected - Exception thrown while reading wallet DB\n");
         result = DBErrors::CORRUPT;
     }
     m_batch->CloseCursor();
@@ -991,15 +1058,15 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
     // MWEB: Load MWEB keychain
     auto mweb_spk_man = pwallet->GetScriptPubKeyMan(OutputType::MWEB, false);
     if (mweb_spk_man) {
-        pwallet->WalletLogPrintf("Loading MWEB Keychain\n");
+        pwallet->WalletLogPrintf("DEBUG: Loading MWEB Keychain\n");
         mweb_spk_man->LoadMWEBKeychain();
     }
     
-    pwallet->WalletLogPrintf("Writing txs\n");
+    pwallet->WalletLogPrintf("DEBUG: Writing txs\n");
     for (const uint256& hash : wss.vWalletUpgrade)
         WriteTx(pwallet->mapWallet.at(hash));
     
-    pwallet->WalletLogPrintf("Erasing txs\n");
+    pwallet->WalletLogPrintf("DEBUG: Erasing txs\n");
     for (const uint256& hash : wss.vWalletRemove) {
         EraseTx(hash);
     }
@@ -1011,29 +1078,31 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
     if (!has_last_client || last_client != CLIENT_VERSION) // Update
         m_batch->Write(DBKeys::VERSION, CLIENT_VERSION);
     
-    pwallet->WalletLogPrintf("Reordering transactions\n");
+    pwallet->WalletLogPrintf("DEBUG: Reordering transactions\n");
     if (wss.fAnyUnordered)
         result = pwallet->ReorderTransactions();
 
     // Upgrade all of the wallet keymetadata to have the hd master key id
     // This operation is not atomic, but if it fails, updated entries are still backwards compatible with older software
     try {
-    pwallet->WalletLogPrintf("Upgrading key metadata\n");
+        pwallet->WalletLogPrintf("DEBUG: Upgrading key metadata\n");
         pwallet->UpgradeKeyMetadata();
     } catch (...) {
+        LogPrintf("DEBUG: Corruption detected while upgrading key metadata\n");
         result = DBErrors::CORRUPT;
     }
 
     // Upgrade all of the descriptor caches to cache the last hardened xpub
     // This operation is not atomic, but if it fails, only new entries are added so it is backwards compatible
     try {
-    pwallet->WalletLogPrintf("Upgrading descriptor cache\n");
+        pwallet->WalletLogPrintf("DEBUG: Upgrading descriptor cache\n");
         pwallet->UpgradeDescriptorCache();
-    } catch (...) {
+    } catch (const std::exception& e) {
+        LogPrintf("DEBUG: Corruption detected while upgrading descriptor cache - %s\n", e.what());
         result = DBErrors::CORRUPT;
     }
     
-    pwallet->WalletLogPrintf("Setting inactive chains\n");
+    pwallet->WalletLogPrintf("DEBUG: Setting inactive chains\n");
     // Set the inactive chain
     if (wss.m_hd_chains.size() > 0) {
         LegacyScriptPubKeyMan* legacy_spkm = pwallet->GetLegacyScriptPubKeyMan();
@@ -1048,7 +1117,7 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
         }
     }
     
-    pwallet->WalletLogPrintf("LoadWallet finished\n");
+    pwallet->WalletLogPrintf("DEBUG: LoadWallet finished\n");
     return result;
 }
 

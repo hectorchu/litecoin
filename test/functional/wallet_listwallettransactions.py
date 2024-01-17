@@ -45,9 +45,8 @@ class ListWalletTransactionsTest(LitecoinTestFramework):
                             {"type": "RecvWithAddress", "amount": Decimal("0.1"), "confirmations": 0})
 
         # mine a block, confirmations should change:
-        blockhash = node0.generate(1)[0]
+        blockhash = self.generate(node0, 1, sync_fun = self.sync_all)[0]
         blockheight = node0.getblockheader(blockhash)['height']
-        self.sync_all()
         assert_array_result(node0.listwallettransactions(),
                             {"txid": txid},
                             {"type": "SendToAddress", "amount": Decimal("-0.1"), "confirmations": 1, "blockhash": blockhash, "blockheight": blockheight})
@@ -69,9 +68,8 @@ class ListWalletTransactionsTest(LitecoinTestFramework):
                             {"amount": Decimal("0.4")})
         
         # mine a block, confirmations should change:
-        blockhash = node0.generate(1)[0]
+        blockhash = self.generate(node0, 1, sync_fun = self.sync_all)[0]
         blockheight = node0.getblockheader(blockhash)['height']
-        self.sync_all()
 
         assert_array_result(node0.listwallettransactions(),
                             {"txid": txid, "type": "SendToSelf"},
@@ -89,9 +87,8 @@ class ListWalletTransactionsTest(LitecoinTestFramework):
                             {"type": "RecvWithAddress", "amount": Decimal("5.0"), "confirmations": 0})
         
         # mine a block, confirmations should change:
-        blockhash = node0.generate(1)[0]
+        blockhash = self.generate(node0, 1, sync_fun = self.sync_all)[0]
         blockheight = node0.getblockheader(blockhash)['height']
-        self.sync_all()
         assert_array_result(node0.listwallettransactions(txid),
                             {"txid": txid},
                             {"type": "SendToAddress", "amount": Decimal("-5.0"), "confirmations": 1, "blockheight": blockheight, "address": node1_mweb_addr})
@@ -112,7 +109,7 @@ class ListWalletTransactionsTest(LitecoinTestFramework):
                             {"txid": txid, "type": "RecvWithAddress", "amount": Decimal("3.0"), "confirmations": 0})
 
         # mine a block, confirmations should change:
-        blockhash = node0.generate(1)[0]
+        blockhash = self.generate(node0, 1, sync_fun = self.sync_all)[0]
         blockheight = node0.getblockheader(blockhash)['height']
         self.sync_all()
         assert_array_result(node1.listwallettransactions(),
@@ -127,7 +124,7 @@ class ListWalletTransactionsTest(LitecoinTestFramework):
         node2_addr = node2.getnewaddress()
         self.stop_node(2)
         txid = node1.sendtoaddress(node2_addr, 1)
-        blockhash = node1.generate(1)[0]
+        blockhash = self.generate(node1, 1, sync_fun = self.no_op)[0]
         blockheight = node1.getblockheader(blockhash)['height']
         hogex_txid = node1.getblock(blockhash)['tx'][-1]
         self.start_node(2)

@@ -140,7 +140,7 @@ PSBTAnalysis AnalyzePSBT(PartiallySignedTransaction psbtx)
             size_t size(GetVirtualTransactionSize(ctx, GetTransactionSigOpCost(ctx, view, STANDARD_SCRIPT_VERIFY_FLAGS), ::nBytesPerSigOp));
             result.estimated_vsize = size;
             // Estimate fee rate
-            CFeeRate feerate(fee, size, 0); // MW: TODO - mweb_weight
+            CFeeRate feerate(fee, size, mtx.mweb_tx.GetMWEBWeight());
             result.estimated_feerate = feerate;
         }
 

@@ -16,9 +16,22 @@ class Keychain
 public:
     using Ptr = std::shared_ptr<Keychain>;
 
+    Keychain(const wallet::ScriptPubKeyMan* spk_man, SecretKey scan_secret)
+        : m_spk_man(spk_man),
+          m_scanSecret(std::move(scan_secret)),
+          m_spendPubkey(std::nullopt),
+          m_spendSecret(std::nullopt) { }
+
+    Keychain(const wallet::ScriptPubKeyMan* spk_man, SecretKey scan_secret, PublicKey spend_pubkey)
+        : m_spk_man(spk_man),
+        m_scanSecret(std::move(scan_secret)),
+        m_spendPubkey(std::move(spend_pubkey)),
+        m_spendSecret(std::nullopt) { }
+
     Keychain(const wallet::ScriptPubKeyMan* spk_man, SecretKey scan_secret, SecretKey spend_secret)
         : m_spk_man(spk_man),
         m_scanSecret(std::move(scan_secret)),
+        m_spendPubkey(PublicKey::From(spend_secret)),
         m_spendSecret(std::move(spend_secret)) { }
 
     // If keychain is locked or watch-only (m_spendSecret is null),
@@ -42,20 +55,25 @@ public:
     SecretKey GetSpendKey(const uint32_t index) const;
 
     const SecretKey& GetScanSecret() const noexcept { return m_scanSecret; }
-    const SecretKey& GetSpendSecret() const noexcept { return m_spendSecret; }
 
-    bool HasSpendSecret() const noexcept { return !m_spendSecret.IsNull(); }
+    bool HasSpendPubKey() const noexcept { return m_spendPubkey.has_value(); }
+    bool HasSpendSecret() const noexcept { return m_spendSecret.has_value(); }
 
 	// Clears the spend secret from memory, effectively making this a watch-only keychain.
-    void Lock() { m_spendSecret = SecretKey::Null(); }
+    void Lock() { m_spendSecret.reset(); }
 	
 	// Reassigns the spend secret. To be used when unlocking the wallet.
-    void Unlock(const SecretKey& spend_secret) { m_spendSecret = spend_secret; }
+    void Unlock(const SecretKey& spend_secret)
+    {
+        m_spendPubkey = PublicKey::From(spend_secret);
+        m_spendSecret = spend_secret;
+    }
     
 private:
     const wallet::ScriptPubKeyMan* m_spk_man;
     SecretKey m_scanSecret;
-    SecretKey m_spendSecret;
+    std::optional<PublicKey> m_spendPubkey;
+    std::optional<SecretKey> m_spendSecret;
 };
 
 END_NAMESPACE

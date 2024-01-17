@@ -7,7 +7,9 @@
 #include <QString>
 #include <optional>
 
-class TransactionRecord;
+namespace wallet {
+class WalletTxRecord;
+}
 
 namespace interfaces {
 class Node;

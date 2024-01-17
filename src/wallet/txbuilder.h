@@ -33,7 +33,7 @@ public:
 
     static TxBuilder::Ptr New(const CWallet& wallet, const CCoinControl& coin_control, const std::vector<CRecipient>& recipients, const std::optional<int>& change_position);
 
-    util::Result<CreatedTransactionResult> Build(bool sign);
+    util::Result<CreatedTransactionResult> Build(const std::optional<int32_t>& nVersion, const std::optional<uint32_t>& nLockTime, bool sign);
 
 private:
     TxBuilder(const CWallet& wallet, const CCoinControl& coin_control, std::vector<CRecipient> recipients, ChangeBuilder&& change)
@@ -74,7 +74,7 @@ private:
     // This includes all MWEB inputs, outputs, and kernels, as well as any HogEx outputs for pegouts.
     CAmount CalcMWEBFee() const noexcept;
 
-    util::Result<size_t> CalcMaxSignedTxBytes(const CMutableTransaction& tx) const;
+    util::Result<TxSize> CalcMaxSignedTxSize(const CMutableTransaction& tx) const;
 };
 
 } // namespace wallet

@@ -153,7 +153,7 @@ UniValue SendMoney(CWallet& wallet, const CCoinControl &coin_control, std::vecto
 
     // Send
     constexpr int RANDOM_CHANGE_POSITION = -1;
-    auto res = CreateTransaction(wallet, recipients, RANDOM_CHANGE_POSITION, coin_control, true);
+    auto res = CreateTransaction(wallet, recipients, RANDOM_CHANGE_POSITION, coin_control, std::nullopt, std::nullopt, true);
     if (!res) {
         throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, util::ErrorString(res).original);
     }
@@ -1357,7 +1357,6 @@ RPCHelpMan sendall()
             }
 
             RawTransaction rawTx = RawTransaction::FromRPC(options["inputs"], recipient_key_value_pairs, options["locktime"], rbf);
-            //CMutableTransaction rawTx{ConstructTransaction(options["inputs"], recipient_key_value_pairs, options["locktime"], rbf)};
             LOCK(pwallet->cs_wallet);
 
             CAmount total_input_value(0);
@@ -1524,12 +1523,20 @@ RPCHelpMan walletprocesspsbt()
     bool finalize = request.params[4].isNull() ? true : request.params[4].get_bool();
     bool complete = true;
 
+    CDataStream ss_psbtx(SER_NETWORK, PROTOCOL_VERSION);
+    ss_psbtx << psbtx;
+    LogPrintf("DEBUG: INPUT - Base64=%s, psbtx=%s, sign=%d, bip32derives=%d, finalize=%d\n", request.params[0].get_str(), HexStr(ss_psbtx), sign, bip32derivs, finalize);
+
     if (sign) EnsureWalletIsUnlocked(*pwallet);
 
     const TransactionError err{wallet.FillPSBT(psbtx, complete, nHashType, sign, bip32derivs, nullptr, finalize)};
     if (err != TransactionError::OK) {
         throw JSONRPCTransactionError(err);
     }
+
+    CDataStream ss_ret(SER_NETWORK, PROTOCOL_VERSION);
+    ss_ret << psbtx;
+    LogPrintf("DEBUG: OUTPUT - Base64=%s, psbtx=%s, complete=%d\n", EncodeBase64(ss_ret.str()), HexStr(ss_ret), complete);
 
     UniValue result(UniValue::VOBJ);
     CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);

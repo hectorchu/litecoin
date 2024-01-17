@@ -9,6 +9,7 @@
 #include <util/vector.h>
 #include <wallet/receive.h>
 #include <wallet/rpc/util.h>
+#include <wallet/txlist.h>
 #include <wallet/wallet.h>
 
 using interfaces::FoundBlock;
@@ -96,6 +97,7 @@ static UniValue ListReceived(const CWallet& wallet, const UniValue& params, cons
     // Tally
     std::map<CTxDestination, tallyitem> mapTally;
     for (const std::pair<const uint256, CWalletTx>& pairWtx : wallet.mapWallet) {
+        LogPrintf("Tx(%s): %s\n", pairWtx.first.GetHex(), pairWtx.second.tx->ToString());
         const CWalletTx& wtx = pairWtx.second;
 
         int nDepth = wallet.GetTxDepthInMainChain(wtx);
@@ -575,6 +577,93 @@ RPCHelpMan listtransactions()
     UniValue result{UniValue::VARR};
     result.push_backV(txs_rev_it - nFrom - nCount, txs_rev_it - nFrom); // Return oldest to newest
     return result;
+},
+    };
+}
+
+RPCHelpMan listwallettransactions()
+{
+    return RPCHelpMan{"listwallettransactions",
+                "\nReturns the list of transactions as they would be displayed in the GUI.\n",
+                {
+                    {"txid", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "The transaction id"},
+                },
+                RPCResult{
+                    RPCResult::Type::ARR, "", "",
+                    {
+                        {RPCResult::Type::OBJ, "", "", Cat(Cat<std::vector<RPCResult>>(
+                        {
+                            {RPCResult::Type::STR, "type", "The transaction type (Generated, SendToAddress, SendToOther, RecvWithAddress, RecvFromOther, SendToSelf, Other)."},
+                            {RPCResult::Type::STR_AMOUNT, "amount", "The amount in " + CURRENCY_UNIT + ". This is negative for the 'send' category, and is positive\n"
+                                "for all other categories"},
+                            {RPCResult::Type::STR_AMOUNT, "net", "The net amount in " + CURRENCY_UNIT + "."},
+                            {RPCResult::Type::BOOL, "involvesWatchonly", /*optional=*/true, "Only returns true if imported addresses were involved in transaction."},
+                            {RPCResult::Type::STR, "address", /*optional=*/true, "The litecoin address of the transaction."},
+                            {RPCResult::Type::STR, "label", /*optional=*/true, "A comment for the address/transaction, if any"},
+                            {RPCResult::Type::NUM, "vout", /*optional=*/true, "the vout value"},
+                            {RPCResult::Type::STR_HEX, "mweb_out", /*optional=*/true, "the MWEB output ID"},
+                            {RPCResult::Type::STR, "pegout", /*optional=*/true, "the MWEB pegout kernel and position (format: \"kernel_id:position\""},
+                            {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the\n"
+                                 "'send' category of transactions."},
+                        },
+                        TransactionDescriptionString()),
+                        {
+                            {RPCResult::Type::BOOL, "abandoned", /*optional=*/true, "'true' if the transaction has been abandoned (inputs are respendable). Only available for the \n"
+                                 "'send' category of transactions."},
+                        })},
+                    }
+                },
+                RPCExamples{
+            "\nList the wallet's transaction records\n"
+            + HelpExampleCli("listwallettransactions", "") +
+            "\nAs a JSON-RPC call\n"
+            + HelpExampleRpc("listwallettransactions", "")
+                },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
+    if (!wallet) return NullUniValue;
+    const CWallet* const pwallet = wallet.get();
+
+    // Make sure the results are valid at least up to the most recent block
+    // the user could have gotten from another RPC command prior to now
+    pwallet->BlockUntilSyncedToCurrentChain();
+
+    UniValue ret(UniValue::VARR);
+
+    {
+        LOCK(pwallet->cs_wallet);
+
+        std::vector<WalletTxRecord> tx_records;
+        if (request.params[0].isNull()) {
+            tx_records = TxList(*pwallet).ListAll(ISMINE_ALL);
+        } else {
+            uint256 hash(ParseHashV(request.params[0], "txid"));
+            auto iter = pwallet->mapWallet.find(hash);
+            if (iter == pwallet->mapWallet.end()) {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid or non-wallet transaction id");
+            }
+            
+            tx_records = TxList(*pwallet).List(iter->second, ISMINE_ALL, std::nullopt, std::nullopt);
+        }
+
+        for (WalletTxRecord& tx_record : tx_records) {
+            tx_record.UpdateStatusIfNeeded(pwallet->GetLastBlockHash());
+        }
+
+        std::sort(tx_records.begin(), tx_records.end(), [](const WalletTxRecord& a, const WalletTxRecord& b) {
+            return a.status.sortKey > b.status.sortKey;
+        });
+
+        
+        for (WalletTxRecord& tx_record : tx_records) {
+            UniValue entry = tx_record.ToUniValue();
+            WalletTxToJSON(*pwallet, tx_record.GetWTX(), entry);
+            ret.push_back(entry);
+        }
+    }
+
+    return ret;
 },
     };
 }

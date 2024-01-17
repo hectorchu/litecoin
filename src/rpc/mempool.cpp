@@ -241,12 +241,15 @@ static std::vector<RPCResult> MempoolEntryDescription()
     return {
         RPCResult{RPCResult::Type::NUM, "vsize", "virtual transaction size as defined in BIP 141. This is different from actual serialized size for witness transactions as witness data is discounted."},
         RPCResult{RPCResult::Type::NUM, "weight", "transaction weight as defined in BIP 141."},
+        RPCResult{RPCResult::Type::NUM, "mwebweight", "transaction MWEB weight"},
         RPCResult{RPCResult::Type::NUM_TIME, "time", "local time transaction entered pool in seconds since 1 Jan 1970 GMT"},
         RPCResult{RPCResult::Type::NUM, "height", "block height when transaction entered pool"},
         RPCResult{RPCResult::Type::NUM, "descendantcount", "number of in-mempool descendant transactions (including this one)"},
         RPCResult{RPCResult::Type::NUM, "descendantsize", "virtual transaction size of in-mempool descendants (including this one)"},
+        RPCResult{RPCResult::Type::NUM, "descendantmwebweight", "transaction MWEB weight of in-mempool descendants (including this one)"},
         RPCResult{RPCResult::Type::NUM, "ancestorcount", "number of in-mempool ancestor transactions (including this one)"},
         RPCResult{RPCResult::Type::NUM, "ancestorsize", "virtual transaction size of in-mempool ancestors (including this one)"},
+        RPCResult{RPCResult::Type::NUM, "ancestormwebweight", "transaction MWEB weight of in-mempool ancestors (including this one)"},
         RPCResult{RPCResult::Type::STR_HEX, "wtxid", "hash of serialized transaction, including witness data"},
         RPCResult{RPCResult::Type::OBJ, "fees", "",
             {
@@ -270,12 +273,15 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
 
     info.pushKV("vsize", (int)e.GetTxSize());
     info.pushKV("weight", (int)e.GetTxWeight());
+    info.pushKV("mwebweight", (int)e.GetMWEBWeight());
     info.pushKV("time", count_seconds(e.GetTime()));
     info.pushKV("height", (int)e.GetHeight());
     info.pushKV("descendantcount", e.GetCountWithDescendants());
     info.pushKV("descendantsize", e.GetSizeWithDescendants());
+    info.pushKV("descendantmwebweight", e.GetMWEBWeightWithDescendants());
     info.pushKV("ancestorcount", e.GetCountWithAncestors());
     info.pushKV("ancestorsize", e.GetSizeWithAncestors());
+    info.pushKV("ancestormwebweight", e.GetMWEBWeightWithAncestors());
     info.pushKV("wtxid", pool.vTxHashes[e.vTxHashesIdx].first.ToString());
 
     UniValue fees(UniValue::VOBJ);
@@ -287,10 +293,11 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
 
     const CTransaction& tx = e.GetTx();
     std::set<std::string> setDepends;
-    for (const CTxIn& txin : tx.vin)
+    for (const GenericInput& input : tx.GetInputs())
     {
-        if (pool.exists(GenTxid::Txid(txin.prevout.hash)))
-            setDepends.insert(txin.prevout.hash.ToString());
+        auto txiter = pool.GetIter(input.GetID());
+        if (txiter.has_value())
+            setDepends.insert(txiter.value()->GetTx().GetHash().ToString());
     }
 
     UniValue depends(UniValue::VARR);

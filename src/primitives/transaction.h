@@ -548,7 +548,7 @@ public:
     bool IsMWEBOnly() const noexcept { return HasMWEBTx() && vin.empty() && vout.empty(); }
 
     /// <summary>
-    /// Builds a vector of CTxInputs, starting with the canoncial inputs (CTxIn), followed by the MWEB input hashes.
+    /// Builds a vector of CTxInputs, starting with the canonical inputs (CTxIn), followed by the MWEB input hashes.
     /// </summary>
     /// <returns>A vector of all of the transaction's inputs.</returns>
     std::vector<GenericInput> GetInputs() const noexcept;
@@ -575,7 +575,7 @@ public:
     GenericOutput GetOutput(const GenericOutputID& idx) const noexcept;
 
     /// <summary>
-    /// Builds a vector of CTxOutputs, starting with the canoncial outputs (CTxOut), followed by the MWEB output IDs.
+    /// Builds a vector of CTxOutputs, starting with the canonical outputs (CTxOut), followed by the MWEB output IDs.
     /// </summary>
     /// <returns>A vector of all of the transaction's outputs.</returns>
     std::vector<GenericOutput> GetOutputs() const noexcept;
@@ -628,13 +628,13 @@ struct CMutableTransaction
     }
 
     /// <summary>
-    /// Builds a vector of GenericInputs, starting with the canoncial inputs (CTxIn), followed by the MWEB input hashes.
+    /// Builds a vector of GenericInputs, starting with the canonical inputs (CTxIn), followed by the MWEB input hashes.
     /// </summary>
     /// <returns>A vector of all of the transaction's inputs.</returns>
     std::vector<GenericInput> GetInputs() const noexcept;
 
     ///// <summary>
-    ///// Builds a vector of GenericOutputs, starting with the canoncial outputs (CTxOut), followed by the MWEB outputs.
+    ///// Builds a vector of GenericOutputs, starting with the canonical outputs (CTxOut), followed by the MWEB outputs.
     ///// </summary>
     ///// <returns>A vector of all of the transaction's outputs.</returns>
     //std::vector<GenericOutput> GetOutputs() const noexcept;
