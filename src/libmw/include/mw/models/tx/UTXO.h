@@ -64,6 +64,7 @@ public:
     template <typename Stream>
     inline void Serialize(Stream& s) const
     {
+        s << m_utxo->GetBlockHeight();
         s << COMPACTSIZE(m_utxo->GetLeafIndex().Get());
 
         if (m_format == FULL_UTXO) {
